@@ -17,6 +17,7 @@ export function calculateLostMinutes(
   const plannedEnd = toMinutes(scheduledEnd);
   if (plannedStart === null || plannedEnd === null || plannedEnd <= plannedStart) return 0;
 
+  if (type === "present") return 0;
   if (type === "absent") return plannedEnd - plannedStart;
   if (type === "late") {
     const actual = toMinutes(actualStart);
