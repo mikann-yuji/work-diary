@@ -7,10 +7,16 @@ service cloud.firestore {
         if request.auth != null
         && request.auth.uid == userId;
 
-      match /{document=**} {
-        allow read, write:
+      match /records/{recordDate} {
+        allow read, delete:
           if request.auth != null
           && request.auth.uid == userId;
+
+        allow create, update:
+          if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.date == recordDate
+          && request.resource.data.schemaVersion is int;
       }
     }
 
