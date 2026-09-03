@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { getCauseDisplayLabels } from "@/constants/cause-options";
 import {
   createCalendarDays,
@@ -36,14 +36,21 @@ export function MonthlyCalendar({
   recordsState,
   onEdit,
   onCreate,
+  onToast,
 }: {
   recordsByDate: ReadonlyMap<string, StoredWorkRecord>;
   recordsState: RecordsState;
   onEdit: (record: StoredWorkRecord) => void;
   onCreate: (date: string) => void;
+  onToast: (message: string, type: "success" | "error") => void;
 }) {
+  const generatingRef = useRef(false);
   const [visibleMonth, setVisibleMonth] = useState<CalendarMonth>(getCurrentMonth);
   const [selectedDate, setSelectedDate] = useState<string | null>(getLocalDateString);
+  const [pdfMode, setPdfMode] = useState(false);
+  const [pdfDates, setPdfDates] = useState<Set<string>>(() => new Set());
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState({ current: 0, total: 0 });
   const today = useMemo(() => getLocalDateString(), []);
   const calendarDays = useMemo(() => createCalendarDays(visibleMonth), [visibleMonth]);
   const summary = useMemo(
@@ -56,8 +63,70 @@ export function MonthlyCalendar({
   ) ?? false;
 
   function moveMonth(amount: number) {
+    if (pdfGenerating) return;
+    if (pdfMode && pdfDates.size > 0) {
+      const approved = window.confirm("選択中の日付が解除されます。月を移動しますか？");
+      if (!approved) return;
+      setPdfDates(new Set());
+      setPdfMode(false);
+    }
     setVisibleMonth((current) => shiftMonth(current, amount));
     setSelectedDate(null);
+  }
+
+  function togglePdfDate(date: string) {
+    if (pdfGenerating || !recordsByDate.has(date)) return;
+    setPdfDates((current) => {
+      const next = new Set(current);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  }
+
+  function selectAllRecordedDays() {
+    const prefix = `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, "0")}-`;
+    setPdfDates(new Set([...recordsByDate.keys()].filter((date) => date.startsWith(prefix))));
+  }
+
+  function cancelPdfMode() {
+    if (pdfGenerating) return;
+    setPdfDates(new Set());
+    setPdfMode(false);
+  }
+
+  async function createPdf() {
+    if (generatingRef.current) return;
+    const selectedRecords = [...pdfDates]
+      .map((date) => recordsByDate.get(date))
+      .filter((record): record is StoredWorkRecord => record !== undefined);
+    if (selectedRecords.length === 0) {
+      onToast("PDF化する日付を選択してください", "error");
+      return;
+    }
+
+    generatingRef.current = true;
+    setPdfGenerating(true);
+    setPdfProgress({ current: 0, total: selectedRecords.length });
+    onToast("PDFを作成しています", "success");
+
+    try {
+      const { generateRecordsPdf } = await import("@/lib/pdf/generate-records-pdf");
+      await generateRecordsPdf(selectedRecords, (current, total) => setPdfProgress({ current, total }));
+      setPdfDates(new Set());
+      setPdfMode(false);
+      onToast("PDFを保存しました", "success");
+    } catch (error) {
+      if (isPdfOverflowError(error)) {
+        const [, month, day] = error.date.split("-").map(Number);
+        onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
+      } else {
+        onToast("PDFを作成できませんでした。もう一度お試しください", "error");
+      }
+    } finally {
+      generatingRef.current = false;
+      setPdfGenerating(false);
+    }
   }
 
   return (
@@ -70,11 +139,26 @@ export function MonthlyCalendar({
           <MonthlySummary month={visibleMonth} summary={summary} />
 
           <section className="rounded-[22px] border border-slate-100 bg-white p-3 shadow-sm shadow-slate-200/40 sm:p-4" aria-label={`${visibleMonth.year}年${visibleMonth.month}月の勤務状況カレンダー`}>
-            <div className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2">
-              <button type="button" aria-label="前の月を表示" onClick={() => moveMonth(-1)} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50">‹</button>
-              <h2 className="text-center text-lg font-bold text-slate-800">{visibleMonth.year}年{visibleMonth.month}月</h2>
-              <button type="button" aria-label="次の月を表示" onClick={() => moveMonth(1)} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50">›</button>
+            <div className="mb-4 flex justify-end">
+              <button type="button" aria-pressed={pdfMode} onClick={() => pdfMode ? cancelPdfMode() : setPdfMode(true)} disabled={pdfGenerating} className={`min-h-11 rounded-xl border px-4 text-sm font-bold transition disabled:opacity-50 ${pdfMode ? "border-teal-700 bg-teal-700 text-white" : "border-teal-200 bg-white text-teal-800 hover:bg-teal-50"}`}>{pdfMode ? "PDF選択中" : "PDF出力"}</button>
             </div>
+            <div className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2">
+              <button type="button" aria-label="前の月を表示" onClick={() => moveMonth(-1)} disabled={pdfGenerating} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">‹</button>
+              <h2 className="text-center text-lg font-bold text-slate-800">{visibleMonth.year}年{visibleMonth.month}月</h2>
+              <button type="button" aria-label="次の月を表示" onClick={() => moveMonth(1)} disabled={pdfGenerating} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">›</button>
+            </div>
+
+            {pdfMode ? (
+              <PdfExportControls
+                selectedCount={pdfDates.size}
+                generating={pdfGenerating}
+                progress={pdfProgress}
+                onSelectAll={selectAllRecordedDays}
+                onClear={() => setPdfDates(new Set())}
+                onGenerate={() => void createPdf()}
+                onCancel={cancelPdfMode}
+              />
+            ) : null}
 
             <CalendarLegend />
 
@@ -88,15 +172,18 @@ export function MonthlyCalendar({
                   date={date}
                   weekday={index % 7}
                   record={recordsByDate.get(date)}
-                  selected={selectedDate === date}
+                  selected={!pdfMode && selectedDate === date}
+                  pdfMode={pdfMode}
+                  pdfSelected={pdfDates.has(date)}
+                  generating={pdfGenerating}
                   today={date === today}
-                  onSelect={() => setSelectedDate(date)}
+                  onSelect={() => pdfMode ? togglePdfDate(date) : setSelectedDate(date)}
                 />
               ) : <div key={`empty-${index}`} aria-hidden="true" className="min-h-14" />)}
             </div>
           </section>
 
-          {selectedDate && selectedDateInMonth ? (
+          {!pdfMode && selectedDate && selectedDateInMonth ? (
             <SelectedDaySummary
               date={selectedDate}
               record={selectedRecord}
@@ -135,7 +222,7 @@ function SummaryItem({ label, value, wide = false }: { label: string; value: str
   return <div className={`rounded-xl bg-slate-50 p-3 ${wide ? "col-span-2 sm:col-span-1" : ""}`}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 text-lg font-bold tabular-nums text-teal-800">{value}</dd></div>;
 }
 
-function CalendarDay({ date, weekday, record, selected, today, onSelect }: { date: string; weekday: number; record?: StoredWorkRecord; selected: boolean; today: boolean; onSelect: () => void }) {
+function CalendarDay({ date, weekday, record, selected, pdfMode, pdfSelected, generating, today, onSelect }: { date: string; weekday: number; record?: StoredWorkRecord; selected: boolean; pdfMode: boolean; pdfSelected: boolean; generating: boolean; today: boolean; onSelect: () => void }) {
   const day = Number(date.slice(-2));
   const status = record?.type;
   const statusLabel = status ? attendanceLabels[status] : "記録なし";
@@ -145,15 +232,36 @@ function CalendarDay({ date, weekday, record, selected, today, onSelect }: { dat
   return (
     <button
       type="button"
-      aria-label={`${formatAccessibleDate(date)}、${statusLabel}`}
-      aria-pressed={selected}
+      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${pdfMode ? pdfSelected ? "、PDF対象として選択済み" : "、PDF対象として未選択" : ""}`}
+      aria-pressed={pdfMode ? pdfSelected : selected}
+      disabled={generating || (pdfMode && !record)}
       onClick={onSelect}
-      className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-xs transition hover:brightness-95 ${appearance} ${selected ? "ring-2 ring-teal-900 ring-offset-1" : ""} ${today ? "outline-2 outline-offset-1 outline-teal-400" : ""}`}
+      className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-xs transition hover:brightness-95 disabled:cursor-not-allowed ${appearance} ${selected ? "ring-2 ring-teal-900 ring-offset-1" : ""} ${pdfSelected ? "ring-4 ring-cyan-300 ring-offset-1" : ""} ${pdfMode && !record ? "opacity-35" : ""} ${today ? "outline-2 outline-offset-1 outline-teal-400" : ""}`}
     >
+      {pdfSelected ? <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-teal-800 shadow">✓</span> : null}
       <span className={`font-bold tabular-nums ${status ? "text-white" : weekdayText}`}>{day}</span>
       <span className={`mt-0.5 min-h-4 font-bold ${status ? "text-white" : "text-slate-300"}`}>{status ? shortAttendanceLabels[status] : "−"}</span>
     </button>
   );
+}
+
+function PdfExportControls({ selectedCount, generating, progress, onSelectAll, onClear, onGenerate, onCancel }: { selectedCount: number; generating: boolean; progress: { current: number; total: number }; onSelectAll: () => void; onClear: () => void; onGenerate: () => void; onCancel: () => void }) {
+  return (
+    <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 p-3">
+      <p className="text-sm font-bold text-teal-900">{selectedCount}日選択中</p>
+      {generating ? <div className="mt-3 flex items-center gap-3" aria-live="polite"><span role="status" aria-label="PDFを作成中" className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700"><span className="sr-only">PDFを作成中</span></span><p className="text-sm font-semibold text-teal-900">PDFを作成しています（{progress.current}/{progress.total}）</p></div> : null}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" onClick={onSelectAll} disabled={generating} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">この月の記録をすべて選択</button>
+        <button type="button" onClick={onClear} disabled={generating || selectedCount === 0} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">選択を解除</button>
+        <button type="button" onClick={onGenerate} disabled={generating || selectedCount === 0} className="min-h-12 rounded-xl bg-teal-700 px-2 text-sm font-bold text-white disabled:opacity-50">選択した日をPDFにする</button>
+        <button type="button" onClick={onCancel} disabled={generating} className="min-h-12 rounded-xl border border-slate-200 bg-white px-2 text-sm font-bold text-slate-600 disabled:opacity-50">キャンセル</button>
+      </div>
+    </div>
+  );
+}
+
+function isPdfOverflowError(error: unknown): error is { date: string } {
+  return error instanceof Error && error.name === "PdfPageOverflowError" && "date" in error;
 }
 
 function CalendarLegend() {

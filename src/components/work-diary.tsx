@@ -329,7 +329,7 @@ export function WorkDiary() {
           <p className="text-center text-xs leading-5 text-slate-400">記録はログイン中のアカウントごとに保存されます。</p>
         </form>
       ) : tab === "calendar" ? (
-        <MonthlyCalendar recordsByDate={recordsByDate} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} />
+        <MonthlyCalendar recordsByDate={recordsByDate} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} onToast={showToast} />
       ) : (
         <History records={records} state={historyState} onEdit={editRecord} />
       )}
