@@ -1,8 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-provider";
 import { CauseSelector } from "@/components/cause-selector";
+import { LoadingSpinner } from "@/components/loading-spinner";
+import { MonthlyCalendar } from "@/components/monthly-calendar";
+import { Toast, type ToastMessage } from "@/components/toast";
 import {
   MedicationSection,
   PreviousDaySection,
@@ -27,6 +30,7 @@ import {
   type RecordInput,
   type StoredWorkRecord,
 } from "@/lib/firestore/records";
+import { getLocalDateString } from "@/lib/calendar";
 import { calculateLostMinutes, formatDuration } from "@/lib/work-time";
 import {
   attendanceLabels,
@@ -36,19 +40,11 @@ import {
   type WorkRecord,
 } from "@/types/work-record";
 
-type Tab = "today" | "history";
+type Tab = "today" | "calendar" | "history";
 type HistoryState = "loading" | "empty" | "success" | "error";
 type FormState = Omit<WorkRecord, "id" | "lostMinutes">;
 
-function localDate() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function createInitialForm(date = localDate()): FormState {
+function createInitialForm(date = getLocalDateString()): FormState {
   return {
     date,
     type: "present",
@@ -101,6 +97,7 @@ export function WorkDiary() {
   const formStartRef = useRef<HTMLFormElement>(null);
   const loadSequenceRef = useRef(0);
   const savingRef = useRef(false);
+  const toastIdRef = useRef(0);
   const [tab, setTab] = useState<Tab>("today");
   const [records, setRecords] = useState<StoredWorkRecord[]>([]);
   const [historyState, setHistoryState] = useState<HistoryState>("loading");
@@ -110,7 +107,7 @@ export function WorkDiary() {
   const [dateLoading, setDateLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
 
   const lostMinutes = useMemo(
     () => calculateLostMinutes(
@@ -123,6 +120,16 @@ export function WorkDiary() {
     [form.type, form.scheduledStart, form.scheduledEnd, form.actualStart, form.actualEnd],
   );
   const dirty = JSON.stringify(form) !== baseline;
+  const recordsByDate = useMemo(
+    () => new Map(records.map((record) => [record.date, record])),
+    [records],
+  );
+  const closeToast = useCallback(() => setToast(null), []);
+
+  function showToast(message: string, type: ToastMessage["type"]) {
+    toastIdRef.current += 1;
+    setToast({ id: toastIdRef.current, message, type });
+  }
 
   useEffect(() => {
     if (!uid) return;
@@ -135,7 +142,6 @@ export function WorkDiary() {
       },
       (error) => {
         console.error("Firestore record subscription failed", error.code);
-        setRecords([]);
         setHistoryState("error");
       },
     );
@@ -173,7 +179,6 @@ export function WorkDiary() {
 
   function updateForm(patch: Partial<FormState>) {
     setForm((current) => ({ ...current, ...patch }));
-    setNotice(null);
   }
 
   function changeDate(nextDate: string) {
@@ -208,7 +213,6 @@ export function WorkDiary() {
     savingRef.current = true;
     setSaving(true);
     setFormError(null);
-    setNotice(null);
 
     const record: RecordInput = {
       date: form.date,
@@ -228,11 +232,10 @@ export function WorkDiary() {
       const result = await saveOrUpdateRecord(uid, record);
       setRecordExists(true);
       setBaseline(JSON.stringify(form));
-      setNotice(result.created ? "記録を保存しました" : "記録を更新しました");
-      setTab("history");
+      showToast(result.created ? "記録を保存しました" : "記録を更新しました", "success");
     } catch (error) {
       console.error("Firestore record save failed", getErrorCode(error));
-      setFormError("記録を保存できませんでした。入力内容はそのままです。通信状況を確認して、もう一度お試しください。");
+      showToast("記録を保存できませんでした。通信状態を確認してください", "error");
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -248,28 +251,39 @@ export function WorkDiary() {
     setRecordExists(true);
     setDateLoading(false);
     setFormError(null);
-    setNotice(null);
     setTab("today");
-    requestAnimationFrame(() => formStartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    scrollToForm(formStartRef);
+  }
+
+  function createRecordForDate(date: string) {
+    if (dirty && !window.confirm("入力中の内容があります。別の日の記録を始めると入力内容は失われます。続けますか？")) return;
+    loadSequenceRef.current += 1;
+    const dateChanged = form.date !== date;
+    const nextForm = createInitialForm(date);
+    setForm(nextForm);
+    setBaseline(JSON.stringify(nextForm));
+    setRecordExists(false);
+    setDateLoading(dateChanged);
+    setFormError(null);
+    setTab("today");
+    scrollToForm(formStartRef);
   }
 
   return (
     <section className="overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_18px_50px_rgba(43,89,85,0.10)] backdrop-blur">
-      <div className="grid grid-cols-2 gap-1 border-b border-slate-100 bg-slate-50/70 p-2" role="tablist" aria-label="記録画面">
-        {([["today", "今日の記録"], ["history", "履歴"]] as const).map(([value, label]) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-12 rounded-2xl px-3 text-base font-bold transition ${tab === value ? "bg-white text-teal-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+      <div className="grid grid-cols-3 gap-1 border-b border-slate-100 bg-slate-50/70 p-2" role="tablist" aria-label="記録画面">
+        {([["today", "今日の記録"], ["calendar", "カレンダー"], ["history", "履歴"]] as const).map(([value, label]) => (
+          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-12 rounded-2xl px-1 text-sm font-bold transition sm:px-3 sm:text-base ${tab === value ? "bg-white text-teal-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
             {label}
             {value === "history" && records.length > 0 ? <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">{records.length}</span> : null}
           </button>
         ))}
       </div>
 
-      {notice ? <p role="status" className="m-4 mb-0 rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-900">{notice}</p> : null}
-
       {tab === "today" ? (
-        <form ref={formStartRef} onSubmit={saveRecord} aria-busy={dateLoading || saving} className="space-y-5 bg-slate-50/50 p-4 sm:p-5">
+        <form ref={formStartRef} onSubmit={saveRecord} aria-busy={dateLoading || saving} className="relative space-y-5 bg-slate-50/50 p-4 sm:p-5">
           {formError ? <p role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{formError}</p> : null}
-          {dateLoading ? <p role="status" className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-semibold text-slate-500">この日の記録を読み込んでいます…</p> : null}
+          {dateLoading ? <div className="absolute inset-0 z-20 flex items-start justify-center bg-white/75 pt-32 backdrop-blur-[1px]"><LoadingSpinner /></div> : null}
           <fieldset disabled={dateLoading || saving} className="contents">
             <SectionCard title="勤務状況" description="わかる範囲から入力してください。">
               <div className="space-y-6">
@@ -314,9 +328,12 @@ export function WorkDiary() {
           </button>
           <p className="text-center text-xs leading-5 text-slate-400">記録はログイン中のアカウントごとに保存されます。</p>
         </form>
+      ) : tab === "calendar" ? (
+        <MonthlyCalendar recordsByDate={recordsByDate} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} />
       ) : (
         <History records={records} state={historyState} onEdit={editRecord} />
       )}
+      <Toast toast={toast} onClose={closeToast} />
     </section>
   );
 }
@@ -326,9 +343,9 @@ function History({ records, state, onEdit }: { records: StoredWorkRecord[]; stat
     <div className="min-h-[420px] p-5 sm:p-6">
       <h2 className="text-lg font-bold text-slate-800">これまでの記録</h2>
       {state === "loading" ? <HistoryMessage title="記録を読み込んでいます…" /> : null}
-      {state === "error" ? <HistoryMessage title="履歴を取得できませんでした" description="通信状況を確認して、しばらくしてからもう一度お試しください。" error /> : null}
+      {state === "error" ? <p role="alert" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">記録を読み込めませんでした。通信状態を確認してください</p> : null}
       {state === "empty" ? <HistoryMessage title="記録はまだありません" description="「今日の記録」から保存すると、ここで振り返れます。" /> : null}
-      {state === "success" ? <div className="mt-4 space-y-3">{records.map((record) => <HistoryCard key={record.id} record={record} onEdit={() => onEdit(record)} />)}</div> : null}
+      {(state === "success" || (state === "error" && records.length > 0)) ? <div className="mt-4 space-y-3">{records.map((record) => <HistoryCard key={record.id} record={record} onEdit={() => onEdit(record)} />)}</div> : null}
     </div>
   );
 }
@@ -367,6 +384,11 @@ function getErrorCode(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error ? String(error.code) : "unknown";
 }
 
+function scrollToForm(formRef: React.RefObject<HTMLFormElement | null>) {
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  requestAnimationFrame(() => formRef.current?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" }));
+}
+
 function HistoryValue({ label, value }: { label: string; value: string }) { return <div><dt className="text-xs text-slate-400">{label}</dt><dd className="mt-0.5 font-semibold text-slate-700">{value}</dd></div>; }
 function formatRating(value: number | null) { return value === null ? "未入力" : `${value} / 5`; }
 function formatMedicationStatus(status: MedicationStatus) { if (status === "taken") return "有"; if (status === "not_taken") return "無"; return "未入力"; }
@@ -375,5 +397,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 type TimePairProps = { legend: string; start: string; end: string; onStart: (value: string) => void; onEnd: (value: string) => void; disabled?: boolean; requiredStart?: boolean; requiredEnd?: boolean; };
 
 function TimePair({ legend, start, end, onStart, onEnd, disabled = false, requiredStart = false, requiredEnd = false }: TimePairProps) {
-  return <fieldset disabled={disabled} className={disabled ? "opacity-45" : ""}><legend className="label">{legend}{disabled ? <span className="ml-2 font-normal text-slate-400">（欠席のため入力不要）</span> : null}</legend><div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 overflow-hidden"><input aria-label={`${legend}の開始`} required={requiredStart} type="time" value={start} onChange={(event) => onStart(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /><span className="text-slate-400">〜</span><input aria-label={`${legend}の終了`} required={requiredEnd} type="time" value={end} onChange={(event) => onEnd(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /></div></fieldset>;
+  return <fieldset disabled={disabled} className={disabled ? "opacity-45" : ""}><legend className="label">{legend}{disabled ? <span className="ml-2 font-normal text-slate-400">（欠勤のため入力不要）</span> : null}</legend><div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 overflow-hidden"><input aria-label={`${legend}の開始`} required={requiredStart} type="time" value={start} onChange={(event) => onStart(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /><span className="text-slate-400">〜</span><input aria-label={`${legend}の終了`} required={requiredEnd} type="time" value={end} onChange={(event) => onEnd(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /></div></fieldset>;
 }

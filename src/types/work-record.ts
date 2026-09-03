@@ -62,6 +62,6 @@ export const attendanceTypes: AttendanceType[] = ["present", "late", "absent", "
 export const attendanceLabels: Record<AttendanceType, string> = {
   present: "出勤",
   late: "遅刻",
-  absent: "欠席",
+  absent: "欠勤",
   early: "早退",
 };

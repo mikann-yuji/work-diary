@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/components/auth-provider";
+import { LoadingSpinner } from "@/components/loading-spinner";
 import { WorkDiary } from "@/components/work-diary";
 
 export function AppShell() {
@@ -17,10 +18,8 @@ export function AppShell() {
   return (
     <main className="min-h-screen px-4 py-6 sm:py-10">
       <div className="mx-auto w-full max-w-md">
-        <header className="mb-6 px-1">
-          <div className="flex items-start justify-between gap-3">
-            <AppMark />
-            <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/75 p-1.5 pl-2 shadow-sm">
+        <AppHeader>
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/75 p-1.5 pl-2 shadow-sm">
               {user.photoURL ? (
                 <span
                   role="img"
@@ -35,12 +34,8 @@ export function AppShell() {
               <button type="button" onClick={() => void logout()} className="min-h-9 shrink-0 rounded-xl px-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50">
                 ログアウト
               </button>
-            </div>
           </div>
-          <p className="mt-3 text-sm font-semibold tracking-[0.16em] text-teal-700">WORK NOTE</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-800">仕事上の傾向と対策</h1>
-          <p className="mt-2 text-[15px] leading-6 text-slate-500">今日の状況を、無理のないペースで記録しましょう。</p>
-        </header>
+        </AppHeader>
 
         {authError ? <MessageBanner>{authError}</MessageBanner> : null}
         {databaseError ? <MessageBanner>{databaseError}</MessageBanner> : null}
@@ -52,10 +47,15 @@ export function AppShell() {
 
 function LoadingScreen() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6">
-      <div role="status" className="text-center">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-teal-100 border-t-teal-700" />
-        <p className="mt-4 text-sm font-semibold text-slate-600">ログイン状態を確認しています</p>
+    <main className="min-h-screen px-4 py-6 sm:py-10">
+      <div className="mx-auto w-full max-w-md">
+        <AppHeader />
+        <section className="overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_18px_50px_rgba(43,89,85,0.10)] backdrop-blur">
+          <div aria-hidden="true" className="grid grid-cols-3 gap-1 border-b border-slate-100 bg-slate-50/70 p-2">
+            {['今日の記録', 'カレンダー', '履歴'].map((label, index) => <span key={label} className={`flex min-h-12 items-center justify-center rounded-2xl px-1 text-sm font-bold ${index === 0 ? "bg-white text-teal-700 shadow-sm" : "text-slate-400"}`}>{label}</span>)}
+          </div>
+          <LoadingSpinner className="min-h-[420px] bg-slate-50/50" />
+        </section>
       </div>
     </main>
   );
@@ -84,7 +84,7 @@ function LoginScreen({ signingIn, error, onLogin }: { signingIn: boolean; error:
 
         <div className="mt-6 space-y-3 border-t border-slate-100 pt-5 text-xs leading-5 text-slate-500">
           <p>データは、ログインしたご本人のアカウントごとに管理されます。</p>
-          <p>勤務記録などは、次の段階でブラウザ内暗号化を追加してから保存する予定です。</p>
+          <p>通信はHTTPSで保護され、記録へのアクセスはFirebase認証とセキュリティルールでアカウントごとに制限されます。</p>
         </div>
       </section>
     </main>
@@ -99,6 +99,20 @@ function AppMark() {
         <path d="m8 14 2.2 2.2L16 11" />
       </svg>
     </div>
+  );
+}
+
+function AppHeader({ children }: { children?: React.ReactNode }) {
+  return (
+    <header className="mb-6 px-1">
+      <div className="flex items-start justify-between gap-3">
+        <AppMark />
+        {children}
+      </div>
+      <p className="mt-3 text-sm font-semibold tracking-[0.16em] text-teal-700">WORK NOTE</p>
+      <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-800">仕事上の傾向と対策</h1>
+      <p className="mt-2 text-[15px] leading-6 text-slate-500">今日の状況を、無理のないペースで記録しましょう。</p>
+    </header>
   );
 }
 

@@ -30,6 +30,12 @@ input[type="date"], input[type="time"] {
   max-width: 100%;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  button, input, textarea {
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @layer components {
   .label {
     @apply mb-2 block text-sm font-bold text-slate-700;
