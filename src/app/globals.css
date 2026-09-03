@@ -24,7 +24,11 @@ body {
 
 button, input { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-input[type="date"], input[type="time"] { min-width: 0; }
+input[type="date"], input[type="time"] {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+}
 
 @layer components {
   .label {

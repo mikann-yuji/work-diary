@@ -45,6 +45,14 @@ function formatDate(date: string) {
   }).format(new Date(`${date}T00:00:00`));
 }
 
+function formatWeekday(date: string) {
+  if (!date) return "";
+  const weekday = new Intl.DateTimeFormat("ja-JP", { weekday: "short" }).format(
+    new Date(`${date}T00:00:00`),
+  );
+  return `（${weekday}）`;
+}
+
 export function WorkDiary() {
   const [tab, setTab] = useState<Tab>("today");
   const [records, setRecords] = useState<WorkRecord[]>([]);
@@ -138,9 +146,9 @@ export function WorkDiary() {
             <div className="space-y-6">
 
           <Field label="日付">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-              <input required type="date" value={date} onChange={(event) => setDate(event.target.value)} className="input" />
-              <span className="text-sm font-semibold text-teal-800">{formatDate(date)}</span>
+            <div className="input flex items-center gap-2 focus-within:border-teal-600 focus-within:ring-4 focus-within:ring-teal-100">
+              <input required type="date" value={date} onChange={(event) => setDate(event.target.value)} className="min-w-0 flex-1 bg-transparent outline-none" />
+              <span className="shrink-0 text-sm font-bold text-teal-800" aria-live="polite">{formatWeekday(date)}</span>
             </div>
           </Field>
 
@@ -349,10 +357,10 @@ function TimePair({ legend, start, end, onStart, onEnd, disabled = false, requir
         {legend}
         {disabled ? <span className="ml-2 font-normal text-slate-400">（欠席のため入力不要）</span> : null}
       </legend>
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <input aria-label={`${legend}の開始`} required={requiredStart} type="time" value={start} onChange={(event) => onStart(event.target.value)} className="input text-center" />
+      <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 overflow-hidden">
+        <input aria-label={`${legend}の開始`} required={requiredStart} type="time" value={start} onChange={(event) => onStart(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" />
         <span className="text-slate-400">〜</span>
-        <input aria-label={`${legend}の終了`} required={requiredEnd} type="time" value={end} onChange={(event) => onEnd(event.target.value)} className="input text-center" />
+        <input aria-label={`${legend}の終了`} required={requiredEnd} type="time" value={end} onChange={(event) => onEnd(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" />
       </div>
     </fieldset>
   );
