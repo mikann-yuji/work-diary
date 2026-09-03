@@ -61,13 +61,6 @@ function toJapaneseAuthError(error: unknown) {
   return "ログインできませんでした。しばらくしてからもう一度お試しください。";
 }
 
-function shouldUseRedirect() {
-  const standalone = window.matchMedia("(display-mode: standalone)").matches
-    || ("standalone" in navigator && navigator.standalone === true);
-  const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-  return standalone || mobile;
-}
-
 async function updateUserDocument(uid: string) {
   const userRef = doc(firestore, "users", uid);
   const snapshot = await getDoc(userRef);
@@ -134,10 +127,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
 
     try {
-      if (shouldUseRedirect()) {
-        await signInWithRedirect(firebaseAuth, googleProvider);
-        return;
-      }
       await signInWithPopup(firebaseAuth, googleProvider);
     } catch (error) {
       if (redirectFallbackCodes.has(getAuthErrorCode(error))) {
