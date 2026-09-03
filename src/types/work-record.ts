@@ -42,6 +42,24 @@ export type WakingState = {
   conditionNote: string;
 };
 
+export type TodayMedicationMeasure = {
+  detail: string;
+  time: string;
+};
+
+export type TodayMeasures = {
+  medications: [TodayMedicationMeasure, TodayMedicationMeasure, TodayMedicationMeasure];
+  others: [string, string];
+};
+
+export type FutureMeasureExecution = "done" | "partial" | "notDone" | null;
+
+export type FutureMeasure = {
+  action: string;
+  execution: FutureMeasureExecution;
+  result: string;
+};
+
 export type WorkRecord = {
   id: string;
   date: string;
@@ -55,6 +73,10 @@ export type WorkRecord = {
   medication: Medication;
   previousDay: PreviousDayState;
   waking: WakingState;
+  countermeasure: string;
+  todayMeasures: TodayMeasures;
+  futureMeasures: [FutureMeasure, FutureMeasure, FutureMeasure, FutureMeasure, FutureMeasure];
+  memo: string;
 };
 
 export const attendanceTypes: AttendanceType[] = ["present", "late", "absent", "early"];

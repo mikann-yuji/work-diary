@@ -1,5 +1,6 @@
 import { causeCategories, OTHER_CAUSE_ID } from "@/constants/cause-options";
 import { medicationPeriods, sleepDepthLabels } from "@/constants/wellness-options";
+import { futureMeasureExecutionLabels } from "@/constants/measure-options";
 import { formatDuration } from "@/lib/work-time";
 import { attendanceLabels, type MedicationStatus } from "@/types/work-record";
 import type { StoredWorkRecord } from "@/lib/firestore/records";
@@ -15,6 +16,9 @@ export const PDF_DENSITY_LEVELS = densityStyles.length;
 
 export function DailyRecordPdfPage({ record, density }: { record: StoredWorkRecord; density: number }) {
   const style = densityStyles[Math.min(density, densityStyles.length - 1)];
+  const todayMedications = record.todayMeasures.medications.filter((item) => item.detail || item.time);
+  const todayOthers = record.todayMeasures.others.filter(Boolean);
+  const futureMeasures = record.futureMeasures.filter((item) => item.action || item.execution || item.result);
 
   return (
     <article
@@ -101,10 +105,36 @@ export function DailyRecordPdfPage({ record, density }: { record: StoredWorkReco
           </div>
         </PdfSection>
 
+        <PdfSection title="対策" padding={style.cellPadding}>
+          <PdfText value={record.countermeasure} padding={style.cellPadding} />
+        </PdfSection>
+
+        <PdfSection title="当日の対策" padding={style.cellPadding}>
+          {todayMedications.length || todayOthers.length ? <div style={{ border: "1px solid #b8c8c6" }}>
+            {todayMedications.map((item, index) => <div key={`medication-${index}`} style={{ display: "grid", gridTemplateColumns: "18mm 1fr 22mm", borderTop: index === 0 ? 0 : "1px solid #d7e0df" }}><strong style={{ padding: style.cellPadding, background: "#f1f7f6" }}>服薬 {index + 1}</strong><span style={{ padding: style.cellPadding, overflowWrap: "anywhere" }}>{item.detail || "-"}</span><span style={{ padding: style.cellPadding, borderLeft: "1px solid #d7e0df" }}>{item.time || "-"}</span></div>)}
+            {todayOthers.map((item, index) => <div key={`other-${index}`} style={{ display: "grid", gridTemplateColumns: "18mm 1fr", borderTop: "1px solid #d7e0df" }}><strong style={{ padding: style.cellPadding, background: "#f1f7f6" }}>その他 {index + 1}</strong><span style={{ padding: style.cellPadding, overflowWrap: "anywhere" }}>{item}</span></div>)}
+          </div> : <PdfText value="" padding={style.cellPadding} />}
+        </PdfSection>
+
+        <PdfSection title="今後の対策" padding={style.cellPadding}>
+          {futureMeasures.length ? <div style={{ border: "1px solid #b8c8c6" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 14mm 1fr", background: "#f1f7f6", fontWeight: 700 }}><span style={{ padding: style.cellPadding }}>今後の対策</span><span style={{ padding: style.cellPadding, borderLeft: "1px solid #d7e0df" }}>実行</span><span style={{ padding: style.cellPadding, borderLeft: "1px solid #d7e0df" }}>結果</span></div>
+            {futureMeasures.map((item, index) => <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 14mm 1fr", borderTop: "1px solid #d7e0df" }}><span style={{ padding: style.cellPadding, overflowWrap: "anywhere" }}>{item.action || "-"}</span><span style={{ padding: style.cellPadding, borderLeft: "1px solid #d7e0df", textAlign: "center" }}>{item.execution ? futureMeasureExecutionLabels[item.execution] : "-"}</span><span style={{ padding: style.cellPadding, borderLeft: "1px solid #d7e0df", overflowWrap: "anywhere" }}>{item.result || "-"}</span></div>)}
+          </div> : <PdfText value="" padding={style.cellPadding} />}
+        </PdfSection>
+
+        <PdfSection title="メモ" padding={style.cellPadding}>
+          <PdfText value={record.memo} padding={style.cellPadding} />
+        </PdfSection>
+
         <footer style={{ marginTop: "auto", borderTop: "1px solid #b8c8c6", paddingTop: "1.3mm", textAlign: "right", color: "#536361", fontSize: "6.5pt" }}>仕事上の傾向と対策</footer>
       </div>
     </article>
   );
+}
+
+function PdfText({ value, padding }: { value: string; padding: string }) {
+  return <div style={{ minHeight: "5mm", border: "1px solid #b8c8c6", padding, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{value.trim() || "-"}</div>;
 }
 
 function PdfSection({ title, padding, children }: { title: string; padding: string; children: React.ReactNode }) {

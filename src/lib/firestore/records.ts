@@ -16,7 +16,8 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { firestore } from "@/lib/firebase/client";
-import type { WorkRecord } from "@/types/work-record";
+import { createEmptyFutureMeasures, createEmptyTodayMeasures } from "@/constants/measure-options";
+import type { FutureMeasure, TodayMedicationMeasure, WorkRecord } from "@/types/work-record";
 
 export type RecordInput = Omit<WorkRecord, "id">;
 
@@ -46,9 +47,13 @@ function fromDocument(id: string, data: DocumentData): StoredWorkRecord {
     medication: data.medication,
     previousDay: data.previousDay,
     waking: data.waking,
+    countermeasure: typeof data.countermeasure === "string" ? data.countermeasure : "",
+    todayMeasures: normalizeTodayMeasures(data.todayMeasures),
+    futureMeasures: normalizeFutureMeasures(data.futureMeasures),
+    memo: typeof data.memo === "string" ? data.memo : "",
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
-    schemaVersion: data.schemaVersion,
+    schemaVersion: typeof data.schemaVersion === "number" ? data.schemaVersion : 1,
   };
 }
 
@@ -73,11 +78,48 @@ export async function saveOrUpdateRecord(
       ...record,
       createdAt,
       updatedAt: serverTimestamp(),
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
 
     return { created: !snapshot.exists() };
   });
+}
+
+function normalizeTodayMeasures(value: unknown) {
+  const empty = createEmptyTodayMeasures();
+  if (!isObject(value)) return empty;
+  const medications = Array.isArray(value.medications) ? value.medications : [];
+  const others = Array.isArray(value.others) ? value.others : [];
+  return {
+    medications: empty.medications.map((fallback, index) => {
+      const item = medications[index];
+      if (!isObject(item)) return fallback;
+      return {
+        detail: typeof item.detail === "string" ? item.detail : "",
+        time: typeof item.time === "string" ? item.time : "",
+      } satisfies TodayMedicationMeasure;
+    }) as typeof empty.medications,
+    others: empty.others.map((_, index) => typeof others[index] === "string" ? others[index] : "") as typeof empty.others,
+  };
+}
+
+function normalizeFutureMeasures(value: unknown) {
+  const empty = createEmptyFutureMeasures();
+  const values = Array.isArray(value) ? value : [];
+  return empty.map((fallback, index) => {
+    const item = values[index];
+    if (!isObject(item)) return fallback;
+    const execution = item.execution;
+    return {
+      action: typeof item.action === "string" ? item.action : "",
+      execution: execution === "done" || execution === "partial" || execution === "notDone" ? execution : null,
+      result: typeof item.result === "string" ? item.result : "",
+    } satisfies FutureMeasure;
+  }) as typeof empty;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 export function subscribeRecords(

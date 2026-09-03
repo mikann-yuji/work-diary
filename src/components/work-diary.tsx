@@ -5,6 +5,12 @@ import { useAuth } from "@/components/auth-provider";
 import { CauseSelector } from "@/components/cause-selector";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { MonthlyCalendar } from "@/components/monthly-calendar";
+import {
+  CountermeasureSection,
+  FutureMeasuresSection,
+  MemoSection,
+  TodayMeasuresSection,
+} from "@/components/measure-sections";
 import { Toast, type ToastMessage } from "@/components/toast";
 import {
   MedicationSection,
@@ -31,6 +37,11 @@ import {
   type StoredWorkRecord,
 } from "@/lib/firestore/records";
 import { getLocalDateString } from "@/lib/calendar";
+import {
+  createEmptyFutureMeasures,
+  createEmptyTodayMeasures,
+  futureMeasureExecutionLabels,
+} from "@/constants/measure-options";
 import { calculateLostMinutes, formatDuration } from "@/lib/work-time";
 import {
   attendanceLabels,
@@ -56,6 +67,10 @@ function createInitialForm(date = getLocalDateString()): FormState {
     medication: createEmptyMedication(),
     previousDay: createEmptyPreviousDayState(),
     waking: createEmptyWakingState(),
+    countermeasure: "",
+    todayMeasures: createEmptyTodayMeasures(),
+    futureMeasures: createEmptyFutureMeasures(),
+    memo: "",
   };
 }
 
@@ -71,6 +86,10 @@ function formFromRecord(record: WorkRecord): FormState {
     medication: structuredClone(record.medication),
     previousDay: { ...record.previousDay },
     waking: { ...record.waking },
+    countermeasure: record.countermeasure,
+    todayMeasures: structuredClone(record.todayMeasures),
+    futureMeasures: structuredClone(record.futureMeasures),
+    memo: record.memo,
   };
 }
 
@@ -226,6 +245,10 @@ export function WorkDiary() {
       medication: structuredClone(form.medication),
       previousDay: { ...form.previousDay },
       waking: { ...form.waking },
+      countermeasure: form.countermeasure,
+      todayMeasures: structuredClone(form.todayMeasures),
+      futureMeasures: structuredClone(form.futureMeasures),
+      memo: form.memo,
     };
 
     try {
@@ -321,6 +344,10 @@ export function WorkDiary() {
             <MedicationSection value={form.medication} onChange={(medication) => updateForm({ medication })} />
             <PreviousDaySection value={form.previousDay} onChange={(previousDay) => updateForm({ previousDay })} />
             <WakingSection value={form.waking} onChange={(waking) => updateForm({ waking })} />
+            <CountermeasureSection value={form.countermeasure} onChange={(countermeasure) => updateForm({ countermeasure })} />
+            <TodayMeasuresSection value={form.todayMeasures} onChange={(todayMeasures) => updateForm({ todayMeasures })} />
+            <FutureMeasuresSection value={form.futureMeasures} onChange={(futureMeasures) => updateForm({ futureMeasures })} />
+            <MemoSection value={form.memo} onChange={(memo) => updateForm({ memo })} />
           </fieldset>
 
           <button type="submit" disabled={!uid || dateLoading || saving} className="min-h-14 w-full rounded-2xl bg-teal-700 px-5 text-base font-bold text-white shadow-lg shadow-teal-900/15 transition hover:bg-teal-800 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55">
@@ -375,9 +402,30 @@ function HistoryCard({ record, onEdit }: { record: StoredWorkRecord; onEdit: () 
         <button type="button" onClick={onEdit} className="min-h-11 rounded-xl bg-teal-700 px-4 text-sm font-bold text-white transition hover:bg-teal-800">編集</button>
         <button type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((current) => !current)} className="min-h-11 rounded-xl border border-teal-200 bg-white px-3 text-sm font-bold text-teal-800 transition hover:bg-teal-50">{expanded ? "詳細を閉じる" : "詳細を見る"}</button>
       </div>
-      {expanded ? <div id={detailsId} className="mt-4 space-y-4 border-t border-slate-200 pt-4"><div><h3 className="text-sm font-bold text-slate-700">服薬</h3><dl className="mt-2 space-y-2">{medicationPeriods.map((period) => { const entry = record.medication[period.id]; return <div key={period.id} className="grid grid-cols-[2rem_4rem_1fr] gap-2 text-sm"><dt className="font-semibold text-slate-600">{period.label}</dt><dd className="text-slate-500">{formatMedicationStatus(entry.status)}</dd><dd className="break-words text-slate-500">{entry.note || "メモなし"}</dd></div>; })}</dl></div><div><h3 className="text-sm font-bold text-slate-700">起床時の体調</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">{record.waking.conditionNote || "未入力"}</p></div></div> : null}
+      {expanded ? <div id={detailsId} className="mt-4 space-y-4 border-t border-slate-200 pt-4"><div><h3 className="text-sm font-bold text-slate-700">服薬</h3><dl className="mt-2 space-y-2">{medicationPeriods.map((period) => { const entry = record.medication[period.id]; return <div key={period.id} className="grid grid-cols-[2rem_4rem_1fr] gap-2 text-sm"><dt className="font-semibold text-slate-600">{period.label}</dt><dd className="text-slate-500">{formatMedicationStatus(entry.status)}</dd><dd className="break-words text-slate-500">{entry.note || "メモなし"}</dd></div>; })}</dl></div><div><h3 className="text-sm font-bold text-slate-700">起床時の体調</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-500">{record.waking.conditionNote || "未入力"}</p></div><MeasureHistoryDetails record={record} /></div> : null}
     </article>
   );
+}
+
+function MeasureHistoryDetails({ record }: { record: WorkRecord }) {
+  const todayItems = [
+    ...record.todayMeasures.medications.flatMap((item, index) => item.detail || item.time
+      ? [`服薬${index + 1}：${item.detail || "内容未入力"}${item.time ? `（${item.time}）` : ""}`]
+      : []),
+    ...record.todayMeasures.others.flatMap((item, index) => item ? [`その他${index + 1}：${item}`] : []),
+  ];
+  const futureItems = record.futureMeasures.filter((item) => item.action || item.execution || item.result);
+
+  return <>
+    <HistoryDetail title="対策" value={record.countermeasure} />
+    <div><h3 className="text-sm font-bold text-slate-700">当日の対策</h3>{todayItems.length ? <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-500">{todayItems.map((item, index) => <li key={index} className="whitespace-pre-wrap">{item}</li>)}</ul> : <p className="mt-2 text-sm text-slate-400">記録なし</p>}</div>
+    <div><h3 className="text-sm font-bold text-slate-700">今後の対策</h3>{futureItems.length ? <div className="mt-2 space-y-2">{futureItems.map((item, index) => <div key={index} className="rounded-xl bg-white p-3 text-sm leading-6 text-slate-500"><p className="whitespace-pre-wrap"><span className="font-semibold text-slate-600">対策：</span>{item.action || "未入力"}</p><p><span className="font-semibold text-slate-600">実行：</span>{item.execution ? futureMeasureExecutionLabels[item.execution] : "未入力"}</p><p className="whitespace-pre-wrap"><span className="font-semibold text-slate-600">結果：</span>{item.result || "未入力"}</p></div>)}</div> : <p className="mt-2 text-sm text-slate-400">記録なし</p>}</div>
+    <HistoryDetail title="メモ" value={record.memo} />
+  </>;
+}
+
+function HistoryDetail({ title, value }: { title: string; value: string }) {
+  return <div><h3 className="text-sm font-bold text-slate-700">{title}</h3><p className={`mt-2 whitespace-pre-wrap text-sm leading-6 ${value ? "text-slate-500" : "text-slate-400"}`}>{value || "記録なし"}</p></div>;
 }
 
 function getErrorCode(error: unknown) {
