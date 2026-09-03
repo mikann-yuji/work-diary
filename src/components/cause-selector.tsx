@@ -38,7 +38,7 @@ export function CauseSelector({ value, onChange }: CauseSelectorProps) {
   }
 
   return (
-    <section aria-labelledby="causes-heading" className="space-y-4 border-t border-slate-100 pt-6">
+    <section aria-labelledby="causes-heading" className="space-y-4 rounded-[22px] border border-slate-100 bg-white p-4 shadow-sm shadow-slate-200/40 sm:p-5">
       <div>
         <h2 id="causes-heading" className="text-lg font-bold text-slate-800">原因</h2>
         <p className="mt-1 text-sm leading-6 text-slate-500">当てはまるものがあれば、いくつでも選べます。</p>
