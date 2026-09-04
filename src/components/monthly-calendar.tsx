@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCauseDisplayLabels } from "@/constants/cause-options";
 import {
   createCalendarDays,
@@ -14,6 +14,7 @@ import { formatDuration } from "@/lib/work-time";
 import { attendanceLabels, type AttendanceType } from "@/types/work-record";
 import type { StoredWorkRecord } from "@/lib/firestore/records";
 import { LoadingSpinner } from "@/components/loading-spinner";
+import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 
@@ -47,10 +48,11 @@ export function MonthlyCalendar({
   const generatingRef = useRef(false);
   const [visibleMonth, setVisibleMonth] = useState<CalendarMonth>(getCurrentMonth);
   const [selectedDate, setSelectedDate] = useState<string | null>(getLocalDateString);
-  const [pdfMode, setPdfMode] = useState(false);
-  const [pdfDates, setPdfDates] = useState<Set<string>>(() => new Set());
-  const [pdfGenerating, setPdfGenerating] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState({ current: 0, total: 0 });
+  const [exportMode, setExportMode] = useState(false);
+  const [exportDates, setExportDates] = useState<Set<string>>(() => new Set());
+  const [generating, setGenerating] = useState<"pdf" | "image" | null>(null);
+  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
+  const [previewImages, setPreviewImages] = useState<PreviewRecordImage[] | null>(null);
   const today = useMemo(() => getLocalDateString(), []);
   const calendarDays = useMemo(() => createCalendarDays(visibleMonth), [visibleMonth]);
   const summary = useMemo(
@@ -61,22 +63,30 @@ export function MonthlyCalendar({
   const selectedDateInMonth = selectedDate?.startsWith(
     `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, "0")}-`,
   ) ?? false;
+  const closeImagePreview = useCallback(() => {
+    setPreviewImages(null);
+    setExportDates(new Set());
+    setExportMode(false);
+  }, []);
+  useEffect(() => () => {
+    previewImages?.forEach((image) => URL.revokeObjectURL(image.url));
+  }, [previewImages]);
 
   function moveMonth(amount: number) {
-    if (pdfGenerating) return;
-    if (pdfMode && pdfDates.size > 0) {
+    if (generating) return;
+    if (exportMode && exportDates.size > 0) {
       const approved = window.confirm("選択中の日付が解除されます。月を移動しますか？");
       if (!approved) return;
-      setPdfDates(new Set());
-      setPdfMode(false);
+      setExportDates(new Set());
+      setExportMode(false);
     }
     setVisibleMonth((current) => shiftMonth(current, amount));
     setSelectedDate(null);
   }
 
-  function togglePdfDate(date: string) {
-    if (pdfGenerating || !recordsByDate.has(date)) return;
-    setPdfDates((current) => {
+  function toggleExportDate(date: string) {
+    if (generating || !recordsByDate.has(date)) return;
+    setExportDates((current) => {
       const next = new Set(current);
       if (next.has(date)) next.delete(date);
       else next.add(date);
@@ -86,18 +96,18 @@ export function MonthlyCalendar({
 
   function selectAllRecordedDays() {
     const prefix = `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, "0")}-`;
-    setPdfDates(new Set([...recordsByDate.keys()].filter((date) => date.startsWith(prefix))));
+    setExportDates(new Set([...recordsByDate.keys()].filter((date) => date.startsWith(prefix))));
   }
 
-  function cancelPdfMode() {
-    if (pdfGenerating) return;
-    setPdfDates(new Set());
-    setPdfMode(false);
+  function cancelExportMode() {
+    if (generating) return;
+    setExportDates(new Set());
+    setExportMode(false);
   }
 
   async function createPdf() {
     if (generatingRef.current) return;
-    const selectedRecords = [...pdfDates]
+    const selectedRecords = [...exportDates]
       .map((date) => recordsByDate.get(date))
       .filter((record): record is StoredWorkRecord => record !== undefined);
     if (selectedRecords.length === 0) {
@@ -106,18 +116,18 @@ export function MonthlyCalendar({
     }
 
     generatingRef.current = true;
-    setPdfGenerating(true);
-    setPdfProgress({ current: 0, total: selectedRecords.length });
+    setGenerating("pdf");
+    setExportProgress({ current: 0, total: selectedRecords.length });
     onToast("PDFを作成しています", "success");
 
     try {
       const { generateRecordsPdf } = await import("@/lib/pdf/generate-records-pdf");
-      await generateRecordsPdf(selectedRecords, (current, total) => setPdfProgress({ current, total }));
-      setPdfDates(new Set());
-      setPdfMode(false);
+      await generateRecordsPdf(selectedRecords, (current, total) => setExportProgress({ current, total }));
+      setExportDates(new Set());
+      setExportMode(false);
       onToast("PDFを保存しました", "success");
     } catch (error) {
-      if (isPdfOverflowError(error)) {
+      if (isRecordOverflowError(error)) {
         const [, month, day] = error.date.split("-").map(Number);
         onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
       } else {
@@ -125,7 +135,44 @@ export function MonthlyCalendar({
       }
     } finally {
       generatingRef.current = false;
-      setPdfGenerating(false);
+      setGenerating(null);
+    }
+  }
+
+  async function createImages() {
+    if (generatingRef.current) return;
+    const selectedRecords = [...exportDates]
+      .map((date) => recordsByDate.get(date))
+      .filter((record): record is StoredWorkRecord => record !== undefined);
+    if (selectedRecords.length === 0) {
+      onToast("画像にする日付を選択してください", "error");
+      return;
+    }
+
+    generatingRef.current = true;
+    setGenerating("image");
+    setExportProgress({ current: 0, total: selectedRecords.length });
+
+    try {
+      const { generateRecordImages } = await import("@/lib/image/generate-record-images");
+      const images = await generateRecordImages(selectedRecords, (current, total) => setExportProgress({ current, total }));
+      setPreviewImages(images.map(({ date, blob }) => ({
+        date,
+        blob,
+        url: URL.createObjectURL(blob),
+        file: new File([blob], `work-diary_${date}.png`, { type: "image/png" }),
+      })));
+      onToast("画像を作成しました", "success");
+    } catch (error) {
+      if (isRecordOverflowError(error)) {
+        const [, month, day] = error.date.split("-").map(Number);
+        onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
+      } else {
+        onToast("画像を作成できませんでした。もう一度お試しください", "error");
+      }
+    } finally {
+      generatingRef.current = false;
+      setGenerating(null);
     }
   }
 
@@ -140,23 +187,24 @@ export function MonthlyCalendar({
 
           <section className="rounded-[22px] border border-slate-100 bg-white p-3 shadow-sm shadow-slate-200/40 sm:p-4" aria-label={`${visibleMonth.year}年${visibleMonth.month}月の勤務状況カレンダー`}>
             <div className="mb-4 flex justify-end">
-              <button type="button" aria-pressed={pdfMode} onClick={() => pdfMode ? cancelPdfMode() : setPdfMode(true)} disabled={pdfGenerating} className={`min-h-11 rounded-xl border px-4 text-sm font-bold transition disabled:opacity-50 ${pdfMode ? "border-teal-700 bg-teal-700 text-white" : "border-teal-200 bg-white text-teal-800 hover:bg-teal-50"}`}>{pdfMode ? "PDF選択中" : "PDF出力"}</button>
+              <button type="button" aria-pressed={exportMode} onClick={() => exportMode ? cancelExportMode() : setExportMode(true)} disabled={Boolean(generating)} className={`min-h-11 rounded-xl border px-4 text-sm font-bold transition disabled:opacity-50 ${exportMode ? "border-teal-700 bg-teal-700 text-white" : "border-teal-200 bg-white text-teal-800 hover:bg-teal-50"}`}>{exportMode ? "出力する日を選択中" : "記録を出力"}</button>
             </div>
             <div className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2">
-              <button type="button" aria-label="前の月を表示" onClick={() => moveMonth(-1)} disabled={pdfGenerating} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">‹</button>
+              <button type="button" aria-label="前の月を表示" onClick={() => moveMonth(-1)} disabled={Boolean(generating)} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">‹</button>
               <h2 className="text-center text-lg font-bold text-slate-800">{visibleMonth.year}年{visibleMonth.month}月</h2>
-              <button type="button" aria-label="次の月を表示" onClick={() => moveMonth(1)} disabled={pdfGenerating} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">›</button>
+              <button type="button" aria-label="次の月を表示" onClick={() => moveMonth(1)} disabled={Boolean(generating)} className="min-h-11 rounded-xl border border-slate-200 text-xl font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">›</button>
             </div>
 
-            {pdfMode ? (
+            {exportMode ? (
               <PdfExportControls
-                selectedCount={pdfDates.size}
-                generating={pdfGenerating}
-                progress={pdfProgress}
+                selectedCount={exportDates.size}
+                generating={generating}
+                progress={exportProgress}
                 onSelectAll={selectAllRecordedDays}
-                onClear={() => setPdfDates(new Set())}
-                onGenerate={() => void createPdf()}
-                onCancel={cancelPdfMode}
+                onClear={() => setExportDates(new Set())}
+                onGeneratePdf={() => void createPdf()}
+                onGenerateImages={() => void createImages()}
+                onCancel={cancelExportMode}
               />
             ) : null}
 
@@ -172,18 +220,18 @@ export function MonthlyCalendar({
                   date={date}
                   weekday={index % 7}
                   record={recordsByDate.get(date)}
-                  selected={!pdfMode && selectedDate === date}
-                  pdfMode={pdfMode}
-                  pdfSelected={pdfDates.has(date)}
-                  generating={pdfGenerating}
+                  selected={!exportMode && selectedDate === date}
+                  pdfMode={exportMode}
+                  pdfSelected={exportDates.has(date)}
+                  generating={Boolean(generating)}
                   today={date === today}
-                  onSelect={() => pdfMode ? togglePdfDate(date) : setSelectedDate(date)}
+                  onSelect={() => exportMode ? toggleExportDate(date) : setSelectedDate(date)}
                 />
               ) : <div key={`empty-${index}`} aria-hidden="true" className="min-h-14" />)}
             </div>
           </section>
 
-          {!pdfMode && selectedDate && selectedDateInMonth ? (
+          {!exportMode && selectedDate && selectedDateInMonth ? (
             <SelectedDaySummary
               date={selectedDate}
               record={selectedRecord}
@@ -193,6 +241,7 @@ export function MonthlyCalendar({
           ) : null}
         </div>
       )}
+      {previewImages ? <ImagePreviewDialog images={previewImages} onClose={closeImagePreview} onToast={onToast} /> : null}
     </div>
   );
 }
@@ -232,7 +281,7 @@ function CalendarDay({ date, weekday, record, selected, pdfMode, pdfSelected, ge
   return (
     <button
       type="button"
-      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${pdfMode ? pdfSelected ? "、PDF対象として選択済み" : "、PDF対象として未選択" : ""}`}
+      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${pdfMode ? pdfSelected ? "、出力対象として選択済み" : "、出力対象として未選択" : ""}`}
       aria-pressed={pdfMode ? pdfSelected : selected}
       disabled={generating || (pdfMode && !record)}
       onClick={onSelect}
@@ -245,23 +294,24 @@ function CalendarDay({ date, weekday, record, selected, pdfMode, pdfSelected, ge
   );
 }
 
-function PdfExportControls({ selectedCount, generating, progress, onSelectAll, onClear, onGenerate, onCancel }: { selectedCount: number; generating: boolean; progress: { current: number; total: number }; onSelectAll: () => void; onClear: () => void; onGenerate: () => void; onCancel: () => void }) {
+function PdfExportControls({ selectedCount, generating, progress, onSelectAll, onClear, onGeneratePdf, onGenerateImages, onCancel }: { selectedCount: number; generating: "pdf" | "image" | null; progress: { current: number; total: number }; onSelectAll: () => void; onClear: () => void; onGeneratePdf: () => void; onGenerateImages: () => void; onCancel: () => void }) {
   return (
     <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 p-3">
       <p className="text-sm font-bold text-teal-900">{selectedCount}日選択中</p>
-      {generating ? <div className="mt-3 flex items-center gap-3" aria-live="polite"><span role="status" aria-label="PDFを作成中" className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700"><span className="sr-only">PDFを作成中</span></span><p className="text-sm font-semibold text-teal-900">PDFを作成しています（{progress.current}/{progress.total}）</p></div> : null}
+      {generating ? <div className="mt-3 flex items-center gap-3" aria-live="polite"><span role="status" aria-label={`${generating === "pdf" ? "PDF" : "画像"}を作成中`} className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700"><span className="sr-only">{generating === "pdf" ? "PDF" : "画像"}を作成中</span></span><p className="text-sm font-semibold text-teal-900">{generating === "pdf" ? "PDF" : "画像"}を作成しています（{progress.current}/{progress.total}）</p></div> : null}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <button type="button" onClick={onSelectAll} disabled={generating} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">この月の記録をすべて選択</button>
-        <button type="button" onClick={onClear} disabled={generating || selectedCount === 0} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">選択を解除</button>
-        <button type="button" onClick={onGenerate} disabled={generating || selectedCount === 0} className="min-h-12 rounded-xl bg-teal-700 px-2 text-sm font-bold text-white disabled:opacity-50">選択した日をPDFにする</button>
-        <button type="button" onClick={onCancel} disabled={generating} className="min-h-12 rounded-xl border border-slate-200 bg-white px-2 text-sm font-bold text-slate-600 disabled:opacity-50">キャンセル</button>
+        <button type="button" onClick={onSelectAll} disabled={Boolean(generating)} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">この月の記録をすべて選択</button>
+        <button type="button" onClick={onClear} disabled={Boolean(generating) || selectedCount === 0} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">選択を解除</button>
+        <button type="button" onClick={onGeneratePdf} disabled={Boolean(generating) || selectedCount === 0} className="min-h-12 rounded-xl bg-teal-700 px-2 text-sm font-bold text-white disabled:opacity-50">PDFとして保存</button>
+        <button type="button" onClick={onGenerateImages} disabled={Boolean(generating) || selectedCount === 0} className="min-h-12 rounded-xl bg-cyan-700 px-2 text-sm font-bold text-white disabled:opacity-50">画像として保存</button>
+        <button type="button" onClick={onCancel} disabled={Boolean(generating)} className="col-span-2 min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-sm font-bold text-slate-600 disabled:opacity-50">キャンセル</button>
       </div>
     </div>
   );
 }
 
-function isPdfOverflowError(error: unknown): error is { date: string } {
-  return error instanceof Error && error.name === "PdfPageOverflowError" && "date" in error;
+function isRecordOverflowError(error: unknown): error is { date: string } {
+  return error instanceof Error && error.name === "RecordPageOverflowError" && "date" in error;
 }
 
 function CalendarLegend() {
