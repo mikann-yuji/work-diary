@@ -35,6 +35,7 @@ export function AppShell() {
     <main className="min-h-screen px-4 pb-6 pt-[calc(env(safe-area-inset-top)+5rem)] sm:pb-10">
       <AppNavigation user={user} currentTab={tab} loggingOut={loggingOut} onTabChange={setTab} onLogout={() => void handleLogout()} />
       <div className="mx-auto w-full max-w-md">
+        <GentlePrompt />
         {authError ? <MessageBanner>{authError}</MessageBanner> : null}
         {databaseError ? <MessageBanner>{databaseError}</MessageBanner> : null}
         <WorkDiary tab={tab} onTabChange={setTab} />
@@ -46,9 +47,15 @@ export function AppShell() {
 
 function LoadingScreen() {
   return (
-    <main className="min-h-screen px-4 py-6 sm:py-10">
+    <main className="min-h-screen px-4 pb-6 pt-[calc(env(safe-area-inset-top)+5rem)] sm:pb-10">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-white/80 bg-white/90 pt-[env(safe-area-inset-top)] shadow-sm backdrop-blur" aria-hidden="true">
+        <div className="mx-auto flex h-16 w-full max-w-md items-center justify-between px-4">
+          <span className="h-10 w-10 animate-pulse rounded-full bg-teal-100 motion-reduce:animate-none" />
+          <span className="h-11 w-11 animate-pulse rounded-xl bg-teal-50 motion-reduce:animate-none" />
+        </div>
+      </header>
       <div className="mx-auto w-full max-w-md">
-        <AppHeader />
+        <GentlePrompt />
         <section className="overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_18px_50px_rgba(43,89,85,0.10)] backdrop-blur"><LoadingSpinner className="min-h-[420px] bg-slate-50/50" /></section>
       </div>
     </main>
@@ -96,18 +103,8 @@ function AppMark() {
   );
 }
 
-function AppHeader({ children }: { children?: React.ReactNode }) {
-  return (
-    <header className="mb-6 px-1">
-      <div className="flex items-start justify-between gap-3">
-        <AppMark />
-        {children}
-      </div>
-      <p className="mt-3 text-sm font-semibold tracking-[0.16em] text-teal-700">WORK NOTE</p>
-      <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-800">仕事上の傾向と対策</h1>
-      <p className="mt-2 text-[15px] leading-6 text-slate-500">今日の状況を、無理のないペースで記録しましょう。</p>
-    </header>
-  );
+function GentlePrompt() {
+  return <p className="mb-4 px-1 text-[15px] leading-6 text-slate-500">今日も、無理なく続けていきましょう。</p>;
 }
 
 function GoogleMark() {
