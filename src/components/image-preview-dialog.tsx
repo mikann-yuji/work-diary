@@ -70,7 +70,7 @@ export function ImagePreviewDialog({
 
         <div className="mt-4 rounded-2xl bg-teal-50 p-3 text-sm leading-6 text-teal-900">
           <p>iPhoneでは共有画面から「画像を保存」を選ぶと、写真アプリに保存できます。</p>
-          <p className="mt-1">共有できない場合は画像を長押しするか、PNGをダウンロードしてください。ダウンロード先がファイルアプリになる場合があります。</p>
+          <p className="mt-1">共有できない場合は、画像を長押しして保存メニューを開いてください。</p>
         </div>
 
         {canShareAll ? <button type="button" onClick={() => void share(allFiles)} disabled={sharing} className="mt-4 min-h-12 w-full rounded-xl bg-teal-700 px-4 text-sm font-bold text-white disabled:opacity-50">{sharing ? "共有画面を開いています…" : "画像を共有・保存"}</button> : null}
@@ -83,15 +83,11 @@ export function ImagePreviewDialog({
               {/* Blob URL points only to an in-memory image generated in this browser. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={image.url} alt={`${formatAccessibleDate(image.date)}の記録画像`} className="mt-3 h-auto w-full border border-slate-200 bg-white" />
-              <div className={`mt-3 grid gap-2 ${canShareOne && !canShareAll ? "grid-cols-2" : "grid-cols-1"}`}>
-                <a href={image.url} download={`work-diary_${image.date}.png`} className="flex min-h-11 items-center justify-center rounded-xl border border-teal-200 px-3 text-center text-sm font-bold text-teal-800">PNGをダウンロード</a>
-                {canShareOne && !canShareAll ? <button type="button" onClick={() => void share([image.file])} disabled={sharing} className="min-h-11 rounded-xl bg-teal-700 px-3 text-sm font-bold text-white disabled:opacity-50">この画像を共有</button> : null}
-              </div>
+              {canShareOne && !canShareAll ? <button type="button" onClick={() => void share([image.file])} disabled={sharing} className="mt-3 min-h-11 w-full rounded-xl bg-teal-700 px-3 text-sm font-bold text-white disabled:opacity-50">この画像を共有</button> : null}
             </article>;
           })}
         </div>
 
-        <button type="button" onClick={onClose} disabled={sharing} className="mt-5 min-h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 disabled:opacity-50">閉じる</button>
         {canShareAll ? <p className="mt-3 text-center text-xs leading-5 text-slate-500">共有後は、共有画面から「画像を保存」を選択してください。</p> : null}
       </section>
     </div>
