@@ -14,7 +14,6 @@ export function ImagePreviewDialog({
   onToast: (message: string, type: "success" | "error") => void;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const sharingRef = useRef(false);
   const [sharing, setSharing] = useState(false);
   const allFiles = useMemo(() => images.map((image) => image.file), [images]);
   const canShareAll = canShareFiles(allFiles);
@@ -25,7 +24,7 @@ export function ImagePreviewDialog({
     document.body.style.overflow = "hidden";
     closeButtonRef.current?.focus();
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !sharingRef.current) onClose();
+      if (event.key === "Escape") onClose();
       if (event.key !== "Tab") return;
       const dialog = closeButtonRef.current?.closest<HTMLElement>("[role=dialog]");
       const focusable = dialog?.querySelectorAll<HTMLElement>("button:not(:disabled), a[href]");
@@ -45,7 +44,6 @@ export function ImagePreviewDialog({
 
   async function share(files: File[]) {
     if (!canShareFiles(files)) return;
-    sharingRef.current = true;
     setSharing(true);
     try {
       await navigator.share({ files, title: "仕事上の傾向と対策" });
@@ -55,7 +53,6 @@ export function ImagePreviewDialog({
         onToast("画像を共有できませんでした。もう一度お試しください", "error");
       }
     } finally {
-      sharingRef.current = false;
       setSharing(false);
     }
   }
@@ -65,7 +62,7 @@ export function ImagePreviewDialog({
       <section role="dialog" aria-modal="true" aria-labelledby="image-preview-title" className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-[28px] bg-white p-4 shadow-2xl sm:rounded-[28px] sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div><h2 id="image-preview-title" className="text-lg font-bold text-slate-800">記録画像のプレビュー</h2><p className="mt-1 text-sm text-slate-500">{images.length}枚のPNGを作成しました</p></div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} disabled={sharing} aria-label="画像プレビューを閉じる" className="min-h-11 min-w-11 rounded-xl border border-slate-200 text-xl text-slate-600 disabled:opacity-50">×</button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="画像プレビューを閉じる" className="relative z-10 min-h-11 min-w-11 shrink-0 touch-manipulation rounded-xl border border-slate-200 bg-white text-xl text-slate-600">×</button>
         </div>
 
         <div className="mt-4 rounded-2xl bg-teal-50 p-3 text-sm leading-6 text-teal-900">
