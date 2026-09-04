@@ -36,7 +36,7 @@ type AuthContextValue = {
   authError: string | null;
   databaseError: string | null;
   signInWithGoogle: () => Promise<void>;
-  logout: () => Promise<void>;
+  logout: () => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -150,9 +150,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAuthError(null);
     try {
       await signOut(firebaseAuth);
-    } catch (error) {
-      console.error("Firebase logout failed", error);
+      return true;
+    } catch {
       setAuthError("ログアウトできませんでした。もう一度お試しください。");
+      return false;
     }
   }, []);
 

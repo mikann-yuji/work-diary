@@ -51,7 +51,7 @@ import {
   type WorkRecord,
 } from "@/types/work-record";
 
-type Tab = "today" | "calendar" | "history";
+export type DiaryTab = "today" | "calendar" | "history";
 type HistoryState = "loading" | "empty" | "success" | "error";
 type FormState = Omit<WorkRecord, "id" | "lostMinutes">;
 
@@ -110,14 +110,13 @@ function formatWeekday(date: string) {
   return `（${weekday}）`;
 }
 
-export function WorkDiary() {
+export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (tab: DiaryTab) => void }) {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
   const formStartRef = useRef<HTMLFormElement>(null);
   const loadSequenceRef = useRef(0);
   const savingRef = useRef(false);
   const toastIdRef = useRef(0);
-  const [tab, setTab] = useState<Tab>("today");
   const [records, setRecords] = useState<StoredWorkRecord[]>([]);
   const [historyState, setHistoryState] = useState<HistoryState>("loading");
   const [form, setForm] = useState<FormState>(createInitialForm);
@@ -274,7 +273,7 @@ export function WorkDiary() {
     setRecordExists(true);
     setDateLoading(false);
     setFormError(null);
-    setTab("today");
+    onTabChange("today");
     scrollToForm(formStartRef);
   }
 
@@ -288,21 +287,12 @@ export function WorkDiary() {
     setRecordExists(false);
     setDateLoading(dateChanged);
     setFormError(null);
-    setTab("today");
+    onTabChange("today");
     scrollToForm(formStartRef);
   }
 
   return (
     <section className="overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_18px_50px_rgba(43,89,85,0.10)] backdrop-blur">
-      <div className="grid grid-cols-3 gap-1 border-b border-slate-100 bg-slate-50/70 p-2" role="tablist" aria-label="記録画面">
-        {([["today", "今日の記録"], ["calendar", "カレンダー"], ["history", "履歴"]] as const).map(([value, label]) => (
-          <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)} className={`min-h-12 rounded-2xl px-1 text-sm font-bold transition sm:px-3 sm:text-base ${tab === value ? "bg-white text-teal-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-            {label}
-            {value === "history" && records.length > 0 ? <span className="ml-2 rounded-full bg-teal-100 px-2 py-0.5 text-xs text-teal-800">{records.length}</span> : null}
-          </button>
-        ))}
-      </div>
-
       {tab === "today" ? (
         <form ref={formStartRef} onSubmit={saveRecord} aria-busy={dateLoading || saving} className="relative space-y-5 bg-slate-50/50 p-4 sm:p-5">
           {formError ? <p role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{formError}</p> : null}

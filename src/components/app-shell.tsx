@@ -1,46 +1,45 @@
 "use client";
 
+import { useCallback, useRef, useState } from "react";
+import { AppNavigation } from "@/components/app-navigation";
 import { useAuth } from "@/components/auth-provider";
 import { LoadingSpinner } from "@/components/loading-spinner";
-import { WorkDiary } from "@/components/work-diary";
+import { Toast, type ToastMessage } from "@/components/toast";
+import { WorkDiary, type DiaryTab } from "@/components/work-diary";
 
 export function AppShell() {
   const { user, loading, signingIn, authError, databaseError, signInWithGoogle, logout } = useAuth();
+  const [tab, setTab] = useState<DiaryTab>("today");
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const toastIdRef = useRef(0);
+  const closeToast = useCallback(() => setToast(null), []);
 
   if (loading) return <LoadingScreen />;
   if (!user) {
     return <LoginScreen signingIn={signingIn} error={authError} onLogin={signInWithGoogle} />;
   }
 
-  const displayName = user.displayName?.trim() || "ユーザー";
-  const initial = displayName.charAt(0) || "人";
+  async function handleLogout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    const succeeded = await logout();
+    setLoggingOut(false);
+    if (!succeeded) {
+      toastIdRef.current += 1;
+      setToast({ id: toastIdRef.current, message: "ログアウトできませんでした。もう一度お試しください", type: "error" });
+    }
+  }
 
   return (
-    <main className="min-h-screen px-4 py-6 sm:py-10">
+    <main className="min-h-screen px-4 pb-6 pt-[calc(env(safe-area-inset-top)+5rem)] sm:pb-10">
+      <AppNavigation user={user} currentTab={tab} loggingOut={loggingOut} onTabChange={setTab} onLogout={() => void handleLogout()} />
       <div className="mx-auto w-full max-w-md">
-        <AppHeader>
-          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/75 p-1.5 pl-2 shadow-sm">
-              {user.photoURL ? (
-                <span
-                  role="img"
-                  aria-label={`${displayName}のプロフィール画像`}
-                  className="h-8 w-8 shrink-0 rounded-full bg-cover bg-center bg-no-repeat"
-                  style={{ backgroundImage: `url(${JSON.stringify(user.photoURL).slice(1, -1)})` }}
-                />
-              ) : (
-                <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-100 text-sm font-bold text-teal-800">{initial}</span>
-              )}
-              <span className="max-w-24 truncate text-xs font-semibold text-slate-600">{displayName}</span>
-              <button type="button" onClick={() => void logout()} className="min-h-9 shrink-0 rounded-xl px-2 text-xs font-bold text-teal-700 transition hover:bg-teal-50">
-                ログアウト
-              </button>
-          </div>
-        </AppHeader>
-
         {authError ? <MessageBanner>{authError}</MessageBanner> : null}
         {databaseError ? <MessageBanner>{databaseError}</MessageBanner> : null}
-        <WorkDiary />
+        <WorkDiary tab={tab} onTabChange={setTab} />
       </div>
+      <Toast toast={toast} onClose={closeToast} />
     </main>
   );
 }
@@ -50,12 +49,7 @@ function LoadingScreen() {
     <main className="min-h-screen px-4 py-6 sm:py-10">
       <div className="mx-auto w-full max-w-md">
         <AppHeader />
-        <section className="overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_18px_50px_rgba(43,89,85,0.10)] backdrop-blur">
-          <div aria-hidden="true" className="grid grid-cols-3 gap-1 border-b border-slate-100 bg-slate-50/70 p-2">
-            {['今日の記録', 'カレンダー', '履歴'].map((label, index) => <span key={label} className={`flex min-h-12 items-center justify-center rounded-2xl px-1 text-sm font-bold ${index === 0 ? "bg-white text-teal-700 shadow-sm" : "text-slate-400"}`}>{label}</span>)}
-          </div>
-          <LoadingSpinner className="min-h-[420px] bg-slate-50/50" />
-        </section>
+        <section className="overflow-hidden rounded-[28px] border border-white/80 bg-white/90 shadow-[0_18px_50px_rgba(43,89,85,0.10)] backdrop-blur"><LoadingSpinner className="min-h-[420px] bg-slate-50/50" /></section>
       </div>
     </main>
   );
