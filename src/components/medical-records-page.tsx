@@ -219,14 +219,13 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     const nextErrors = validate(form);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
-      if (nextErrors.hospitalUrl) {
-        onToast("病院URLを正しく入力してください", "error");
-        requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus());
-        return;
-      }
       const missing = requiredFieldLabels.filter(({ id }) => nextErrors[id]).map(({ label }) => label);
-      onToast(`必須項目を入力してください：${missing.join("、")}`, "error");
-      requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus());
+      onToast(missing.length > 0 ? `必須項目を入力してください：${missing.join("、")}` : "病院URLを正しく入力してください", "error");
+      requestAnimationFrame(() => {
+        const firstInvalid = formRef.current?.querySelector<HTMLElement>("[aria-invalid='true']");
+        firstInvalid?.scrollIntoView({ behavior: "smooth", block: "center" });
+        firstInvalid?.focus({ preventScroll: true });
+      });
       return;
     }
     if (savingRef.current || preparingImages) return;
