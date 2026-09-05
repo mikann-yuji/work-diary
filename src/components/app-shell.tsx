@@ -7,12 +7,14 @@ import { LoadingSpinner } from "@/components/loading-spinner";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { WorkDiary, type DiaryTab } from "@/components/work-diary";
 import { deleteDraftsForUser, hasDraftsForUser } from "@/lib/drafts/indexed-db";
+import type { DraftSaveState } from "@/hooks/use-draft-autosave";
 
 export function AppShell() {
   const { user, loading, signingIn, authError, databaseError, signInWithGoogle, logout } = useAuth();
   const [tab, setTab] = useState<DiaryTab>("today");
   const [loggingOut, setLoggingOut] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [draftStatus, setDraftStatus] = useState<{ state: DraftSaveState; savedAt: number | null } | null>(null);
   const toastIdRef = useRef(0);
   const closeToast = useCallback(() => setToast(null), []);
 
@@ -38,12 +40,12 @@ export function AppShell() {
 
   return (
     <main className="min-h-screen px-4 pb-6 pt-[calc(env(safe-area-inset-top)+5rem)] sm:pb-10">
-      <AppNavigation user={user} currentTab={tab} loggingOut={loggingOut} onTabChange={setTab} onLogout={() => void handleLogout()} />
+      <AppNavigation user={user} currentTab={tab} loggingOut={loggingOut} draftStatus={draftStatus} onTabChange={setTab} onLogout={() => void handleLogout()} />
       <div className="mx-auto w-full max-w-md">
         <GentlePrompt />
         {authError ? <MessageBanner>{authError}</MessageBanner> : null}
         {databaseError ? <MessageBanner>{databaseError}</MessageBanner> : null}
-        <WorkDiary tab={tab} onTabChange={setTab} />
+        <WorkDiary tab={tab} onTabChange={setTab} onDraftStatusChange={setDraftStatus} />
       </div>
       <Toast toast={toast} onClose={closeToast} />
     </main>

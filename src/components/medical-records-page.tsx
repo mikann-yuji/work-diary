@@ -26,7 +26,7 @@ const visitMethods: Array<{ id: VisitMethod; label: string }> = [{ id: "initial"
 const reservationOptions: Array<{ id: Exclude<ReservationStatus, null>; label: string }> = [{ id: "unbooked", label: "未予約" }, { id: "booked", label: "予約済み" }];
 const requiredFieldLabels: Array<{ id: keyof Errors; label: string }> = [{ id: "visitDate", label: "通院日" }, { id: "department", label: "診療科" }, { id: "visitMethod", label: "受診方法" }, { id: "reservationDeadline", label: "予約する期限" }, { id: "reservationStatus", label: "予約状況" }, { id: "appointmentDateTime", label: "予約日時" }];
 
-export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onRequestHandled, onToast }: { uid: string; records: StoredMedicalRecord[]; state: RecordsState; requestedRecordId: string | null; onRequestHandled: () => void; onToast: (message: string, type: "success" | "error") => void }) {
+export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onRequestHandled, onToast, onDraftStatusChange }: { uid: string; records: StoredMedicalRecord[]; state: RecordsState; requestedRecordId: string | null; onRequestHandled: () => void; onToast: (message: string, type: "success" | "error") => void; onDraftStatusChange: (status: { state: DraftSaveState; savedAt: number | null } | null) => void }) {
   const [form, setForm] = useState<FormState>(createInitialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [existingPrescription, setExistingPrescription] = useState<MedicalImageReference[]>([]);
@@ -49,6 +49,11 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   const draftPayload = useMemo<MedicalDraftPayload>(() => ({ form, existingPrescription, existingGuides, removedPaths, pendingIds: { prescriptions: pendingPrescription.map((image) => image.id), "medication-guides": pendingGuides.map((image) => image.id) } }), [form, existingPrescription, existingGuides, removedPaths, pendingPrescription, pendingGuides]);
   const medicalDraft = useMemo<DraftEntry<MedicalDraftPayload>>(() => ({ key: activeDraftKey, uid, kind: "medical-record", mode: editingId ? "edit" : "new", targetId: editingId ?? draftId, payload: draftPayload, updatedAt: 0 }), [activeDraftKey, uid, editingId, draftId, draftPayload]);
   const draftAutosave = useDraftAutosave({ draft: medicalDraft, enabled: draftReady && !saving && !preparingImages });
+
+  useEffect(() => {
+    onDraftStatusChange(draftAutosave.state === "clean" ? null : { state: draftAutosave.state, savedAt: draftAutosave.savedAt });
+  }, [draftAutosave.state, draftAutosave.savedAt, onDraftStatusChange]);
+  useEffect(() => () => onDraftStatusChange(null), [onDraftStatusChange]);
 
   useEffect(() => () => pendingRef.current.forEach((image) => URL.revokeObjectURL(image.url)), []);
   useEffect(() => {
@@ -292,7 +297,6 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
       <SectionCard title="画像" description="画像は端末内で縮小し、本人だけがアクセスできるStorageへ保存します。"><div className="space-y-5"><ImagePicker title="処方箋の画像" kind="prescriptions" existing={existingPrescription} pending={pendingPrescription} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /><ImagePicker title="薬の説明書の画像" kind="medication-guides" existing={existingGuides} pending={pendingGuides} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /></div>{preparingImages ? <p role="status" className="mt-3 text-sm font-bold text-teal-800">画像を準備しています…</p> : null}</SectionCard>
       {uploadProgress !== null ? <p className="text-center text-sm font-bold text-teal-800" aria-live="polite">画像をアップロードしています（{uploadProgress}%）</p> : null}
       <button type="submit" disabled={saving || preparingImages} className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-teal-700 px-5 text-base font-bold text-white shadow-lg shadow-teal-900/15 disabled:cursor-wait disabled:opacity-55">{saving ? <><span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-teal-200 border-t-white" />保存しています…</> : editingId ? "通院記録を更新" : "通院記録を保存"}</button>
-      <MedicalDraftStatus state={draftAutosave.state} savedAt={draftAutosave.savedAt} />
       {draftAutosave.state !== "clean" ? <button type="button" onClick={() => void discardCurrentDraft()} disabled={saving || preparingImages} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 disabled:opacity-50">下書きを破棄</button> : null}
       {editingId ? <button type="button" onClick={() => void removeRecord()} disabled={saving || preparingImages} className="min-h-12 w-full rounded-2xl border border-rose-200 bg-white px-5 text-sm font-bold text-rose-700 disabled:opacity-50">この通院記録を削除</button> : null}
       <p className="text-center text-xs text-slate-400">下書きはこの端末に保存されます。</p>
@@ -332,11 +336,6 @@ function MedicalRecordList({ records, state, onEdit }: { records: StoredMedicalR
 
 function NewMedicalDraftChooser({ drafts, onOpen, onDelete, onCreate }: { drafts: DraftEntry<MedicalDraftPayload>[]; onOpen: (draft: DraftEntry<MedicalDraftPayload>) => void; onDelete: (draft: DraftEntry<MedicalDraftPayload>) => void; onCreate: () => void }) {
   return <section className="rounded-[22px] border border-teal-100 bg-white p-4"><h2 className="font-bold text-slate-800">保存されている新規下書き</h2><p className="mt-1 text-sm text-slate-500">開く下書きを選んでください。</p><div className="mt-3 space-y-2">{drafts.map((draft) => <div key={draft.key} className="rounded-xl bg-slate-50 p-3"><p className="text-sm font-bold text-slate-700">{draft.payload.form.visitDate || "日付未入力"}・{draft.payload.form.department || "診療科未入力"}</p><p className="mt-1 truncate text-xs text-slate-500">{draft.payload.form.hospitalName || "病院名未入力"}／{new Intl.DateTimeFormat("ja-JP", { dateStyle: "short", timeStyle: "short" }).format(draft.updatedAt)}</p><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={() => onOpen(draft)} className="min-h-11 rounded-xl bg-teal-700 text-sm font-bold text-white">下書きを開く</button><button type="button" onClick={() => onDelete(draft)} className="min-h-11 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600">下書きを削除</button></div></div>)}</div><button type="button" onClick={onCreate} className="mt-3 min-h-11 w-full rounded-xl border border-teal-200 bg-white text-sm font-bold text-teal-800">新しい通院記録を作成</button></section>;
-}
-
-function MedicalDraftStatus({ state, savedAt }: { state: DraftSaveState; savedAt: number | null }) {
-  const label = state === "changed" ? "変更あり" : state === "saving" ? "下書きを保存中…" : state === "saved" && savedAt ? `下書き保存済み ${new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(savedAt)}` : state === "error" ? "下書きを保存できませんでした" : "";
-  return label ? <p role="status" aria-live="polite" className={`text-center text-xs ${state === "error" ? "text-rose-700" : "text-slate-500"}`}>{label}</p> : null;
 }
 
 function Field({ label, required, error, children }: { label: string; required?: boolean; error?: string; children: React.ReactNode }) { return <label className="block"><span className="label">{label}{required ? <span className="ml-2 text-xs text-rose-600">必須</span> : <span className="ml-2 font-normal text-slate-400">（任意）</span>}</span>{children}{error ? <span className="mt-1 block text-sm text-rose-700">{error}</span> : null}</label>; }

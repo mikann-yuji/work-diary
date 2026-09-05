@@ -115,13 +115,14 @@ function formatWeekday(date: string) {
   return `（${weekday}）`;
 }
 
-export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (tab: DiaryTab) => void }) {
+export function WorkDiary({ tab, onTabChange, onDraftStatusChange }: { tab: DiaryTab; onTabChange: (tab: DiaryTab) => void; onDraftStatusChange: (status: { state: DraftSaveState; savedAt: number | null } | null) => void }) {
   const { user } = useAuth();
   const uid = user?.uid ?? null;
   const formStartRef = useRef<HTMLFormElement>(null);
   const loadSequenceRef = useRef(0);
   const savingRef = useRef(false);
   const toastIdRef = useRef(0);
+  const lastDraftErrorToastRef = useRef(0);
   const [records, setRecords] = useState<StoredWorkRecord[]>([]);
   const [medicalRecords, setMedicalRecords] = useState<StoredMedicalRecord[]>([]);
   const [medicalState, setMedicalState] = useState<HistoryState>("loading");
@@ -134,9 +135,22 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const [medicalDraftStatus, setMedicalDraftStatus] = useState<{ state: DraftSaveState; savedAt: number | null } | null>(null);
   const workDraftKey = uid ? `work-record:${uid}:${form.date}` : "work-record:unavailable";
   const workDraft = useMemo<DraftEntry<FormState>>(() => ({ key: workDraftKey, uid: uid ?? "", kind: "work-record", mode: "date", targetId: form.date, payload: form, updatedAt: 0 }), [workDraftKey, uid, form]);
   const draftAutosave = useDraftAutosave({ draft: workDraft, enabled: Boolean(uid) && !dateLoading && !saving });
+
+  useEffect(() => {
+    const status = tab === "today"
+      ? draftAutosave.state === "clean" ? null : { state: draftAutosave.state, savedAt: draftAutosave.savedAt }
+      : tab === "medical" ? medicalDraftStatus : null;
+    onDraftStatusChange(status);
+    if (status?.state === "error" && Date.now() - lastDraftErrorToastRef.current > 30000) {
+      lastDraftErrorToastRef.current = Date.now();
+      showToast("下書きを保存できませんでした", "error");
+    }
+  }, [tab, draftAutosave.state, draftAutosave.savedAt, medicalDraftStatus, onDraftStatusChange]);
+  useEffect(() => () => onDraftStatusChange(null), [onDraftStatusChange]);
 
   const lostMinutes = useMemo(
     () => calculateLostMinutes(
@@ -415,13 +429,12 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
           <button type="submit" disabled={!uid || dateLoading || saving} className="min-h-14 w-full rounded-2xl bg-teal-700 px-5 text-base font-bold text-white shadow-lg shadow-teal-900/15 transition hover:bg-teal-800 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55">
             {saving ? "保存しています…" : recordExists ? "この日の記録を更新" : "この日の記録を保存"}
           </button>
-          <DraftStatus state={draftAutosave.state} savedAt={draftAutosave.savedAt} />
           {draftAutosave.state !== "clean" ? <button type="button" onClick={() => void discardWorkDraft()} disabled={dateLoading || saving} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 disabled:opacity-50">下書きを破棄</button> : null}
           <p className="text-center text-xs leading-5 text-slate-400">記録はログイン中のアカウントごとに保存されます。</p>
           <p className="text-center text-xs leading-5 text-slate-400">下書きはこの端末に保存されます。</p>
         </form>
       ) : tab === "medical" ? (
-        <MedicalRecordsPage uid={uid ?? ""} records={medicalRecords} state={medicalState} requestedRecordId={requestedMedicalId} onRequestHandled={() => setRequestedMedicalId(null)} onToast={showToast} />
+        <MedicalRecordsPage uid={uid ?? ""} records={medicalRecords} state={medicalState} requestedRecordId={requestedMedicalId} onRequestHandled={() => setRequestedMedicalId(null)} onToast={showToast} onDraftStatusChange={setMedicalDraftStatus} />
       ) : tab === "calendar" ? (
         <MonthlyCalendar recordsByDate={recordsByDate} medicalRecords={medicalRecords} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} onOpenMedical={(recordId) => { setRequestedMedicalId(recordId); onTabChange("medical"); }} onToast={showToast} />
       ) : (
@@ -430,11 +443,6 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
       <Toast toast={toast} onClose={closeToast} />
     </section>
   );
-}
-
-function DraftStatus({ state, savedAt }: { state: DraftSaveState; savedAt: number | null }) {
-  const label = state === "changed" ? "変更あり" : state === "saving" ? "下書きを保存中…" : state === "saved" && savedAt ? `下書き保存済み ${new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(savedAt)}` : state === "error" ? "下書きを保存できませんでした" : "";
-  return label ? <p role="status" aria-live="polite" className={`text-center text-xs ${state === "error" ? "text-rose-700" : "text-slate-500"}`}>{label}</p> : null;
 }
 
 function History({ records, state, onEdit }: { records: StoredWorkRecord[]; state: HistoryState; onEdit: (record: StoredWorkRecord) => void }) {

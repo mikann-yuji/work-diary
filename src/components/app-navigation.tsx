@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { User } from "firebase/auth";
 import type { DiaryTab } from "@/components/work-diary";
+import type { DraftSaveState } from "@/hooks/use-draft-autosave";
 
 const menuItems: Array<{ id: DiaryTab; label: string }> = [
   { id: "today", label: "今日の記録" },
@@ -18,12 +19,14 @@ export function AppNavigation({
   loggingOut,
   onTabChange,
   onLogout,
+  draftStatus,
 }: {
   user: User;
   currentTab: DiaryTab;
   loggingOut: boolean;
   onTabChange: (tab: DiaryTab) => void;
   onLogout: () => void;
+  draftStatus: { state: DraftSaveState; savedAt: number | null } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [openedBy, setOpenedBy] = useState<HTMLElement | null>(null);
@@ -84,6 +87,7 @@ export function AppNavigation({
           <button type="button" aria-label="メニューを開く" aria-expanded={open} aria-controls="app-navigation-drawer" onClick={(event) => open ? closeMenu() : openMenu(event.currentTarget)} className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full ring-offset-2 transition hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
             <AccountAvatar user={user} size={40} />
           </button>
+          <HeaderDraftStatus status={draftStatus} />
           <button type="button" aria-label="メニューを開く" aria-expanded={open} aria-controls="app-navigation-drawer" onClick={(event) => open ? closeMenu() : openMenu(event.currentTarget)} className="flex h-11 w-11 touch-manipulation flex-col items-center justify-center gap-1.5 rounded-xl text-teal-800 transition hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600">
             <span aria-hidden="true" className="h-0.5 w-6 rounded-full bg-current" />
             <span aria-hidden="true" className="h-0.5 w-6 rounded-full bg-current" />
@@ -112,6 +116,18 @@ export function AppNavigation({
       </div>
     </>
   );
+}
+
+function HeaderDraftStatus({ status }: { status: { state: DraftSaveState; savedAt: number | null } | null }) {
+  let label = "";
+  let time = "";
+  if (status?.state === "changed") label = "未保存";
+  else if (status?.state === "saving") label = "保存中…";
+  else if (status?.state === "saved") {
+    label = "下書き保存済み";
+    if (status.savedAt) time = new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(status.savedAt);
+  } else if (status?.state === "error") label = "保存失敗";
+  return <div role="status" aria-live="polite" aria-atomic="true" aria-label={label ? `${label}${time ? ` ${time}` : ""}` : undefined} className={`min-w-0 flex-1 px-2 text-center text-[11px] font-semibold ${status?.state === "error" ? "text-rose-700" : "text-slate-500"}`}><span aria-hidden="true" className="block overflow-hidden text-ellipsis whitespace-nowrap">{label}{time ? <span className="hidden min-[390px]:inline"> {time}</span> : null}</span></div>;
 }
 
 function AccountAvatar({ user, size }: { user: User; size: number }) {
