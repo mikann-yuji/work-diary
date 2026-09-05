@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { CauseSelector } from "@/components/cause-selector";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { MonthlyCalendar } from "@/components/monthly-calendar";
+import { MedicalRecordsPage } from "@/components/medical-records-page";
 import {
   CountermeasureSection,
   FutureMeasuresSection,
@@ -37,6 +38,8 @@ import {
   type StoredWorkRecord,
 } from "@/lib/firestore/records";
 import { getLocalDateString } from "@/lib/calendar";
+import { subscribeMedicalRecords } from "@/lib/firestore/medical-records";
+import type { StoredMedicalRecord } from "@/types/medical-record";
 import {
   createEmptyFutureMeasures,
   createEmptyTodayMeasures,
@@ -51,7 +54,7 @@ import {
   type WorkRecord,
 } from "@/types/work-record";
 
-export type DiaryTab = "today" | "calendar" | "history";
+export type DiaryTab = "today" | "medical" | "calendar" | "history";
 type HistoryState = "loading" | "empty" | "success" | "error";
 type FormState = Omit<WorkRecord, "id" | "lostMinutes">;
 
@@ -118,6 +121,9 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
   const savingRef = useRef(false);
   const toastIdRef = useRef(0);
   const [records, setRecords] = useState<StoredWorkRecord[]>([]);
+  const [medicalRecords, setMedicalRecords] = useState<StoredMedicalRecord[]>([]);
+  const [medicalState, setMedicalState] = useState<HistoryState>("loading");
+  const [requestedMedicalId, setRequestedMedicalId] = useState<string | null>(null);
   const [historyState, setHistoryState] = useState<HistoryState>("loading");
   const [form, setForm] = useState<FormState>(createInitialForm);
   const [baseline, setBaseline] = useState(() => JSON.stringify(createInitialForm()));
@@ -164,6 +170,14 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
       },
     );
     return unsubscribe;
+  }, [uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    return subscribeMedicalRecords(uid, (nextRecords) => {
+      setMedicalRecords(nextRecords);
+      setMedicalState(nextRecords.length ? "success" : "empty");
+    }, () => setMedicalState("error"));
   }, [uid]);
 
   useEffect(() => {
@@ -345,8 +359,10 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
           </button>
           <p className="text-center text-xs leading-5 text-slate-400">記録はログイン中のアカウントごとに保存されます。</p>
         </form>
+      ) : tab === "medical" ? (
+        <MedicalRecordsPage uid={uid ?? ""} records={medicalRecords} state={medicalState} requestedRecordId={requestedMedicalId} onRequestHandled={() => setRequestedMedicalId(null)} onToast={showToast} />
       ) : tab === "calendar" ? (
-        <MonthlyCalendar recordsByDate={recordsByDate} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} onToast={showToast} />
+        <MonthlyCalendar recordsByDate={recordsByDate} medicalRecords={medicalRecords} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} onOpenMedical={(recordId) => { setRequestedMedicalId(recordId); onTabChange("medical"); }} onToast={showToast} />
       ) : (
         <History records={records} state={historyState} onEdit={editRecord} />
       )}

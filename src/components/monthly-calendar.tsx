@@ -13,10 +13,12 @@ import {
 import { formatDuration } from "@/lib/work-time";
 import { attendanceLabels, type AttendanceType } from "@/types/work-record";
 import type { StoredWorkRecord } from "@/lib/firestore/records";
+import type { StoredMedicalRecord } from "@/types/medical-record";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
+type MedicalEvent = { type: "visit" | "deadline" | "appointment"; record: StoredMedicalRecord };
 
 const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 const shortAttendanceLabels: Record<AttendanceType, string> = {
@@ -34,15 +36,19 @@ const attendanceStyles: Record<AttendanceType, string> = {
 
 export function MonthlyCalendar({
   recordsByDate,
+  medicalRecords,
   recordsState,
   onEdit,
   onCreate,
+  onOpenMedical,
   onToast,
 }: {
   recordsByDate: ReadonlyMap<string, StoredWorkRecord>;
+  medicalRecords: StoredMedicalRecord[];
   recordsState: RecordsState;
   onEdit: (record: StoredWorkRecord) => void;
   onCreate: (date: string) => void;
+  onOpenMedical: (recordId: string) => void;
   onToast: (message: string, type: "success" | "error") => void;
 }) {
   const generatingRef = useRef(false);
@@ -59,6 +65,19 @@ export function MonthlyCalendar({
     () => summarizeMonth(recordsByDate.values(), visibleMonth),
     [recordsByDate, visibleMonth],
   );
+  const medicalEventsByDate = useMemo(() => {
+    const map = new Map<string, MedicalEvent[]>();
+    const add = (date: string | null, event: MedicalEvent) => {
+      if (!date) return;
+      map.set(date, [...(map.get(date) ?? []), event]);
+    };
+    medicalRecords.forEach((record) => {
+      add(record.visitDate, { type: "visit", record });
+      if (record.hasNextVisit) add(record.reservationDeadline, { type: "deadline", record });
+      if (record.hasNextVisit && record.reservationStatus === "booked") add(record.appointmentDateTime?.slice(0, 10) ?? null, { type: "appointment", record });
+    });
+    return map;
+  }, [medicalRecords]);
   const selectedRecord = selectedDate ? recordsByDate.get(selectedDate) ?? null : null;
   const selectedDateInMonth = selectedDate?.startsWith(
     `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, "0")}-`,
@@ -209,6 +228,7 @@ export function MonthlyCalendar({
             ) : null}
 
             <CalendarLegend />
+            <MedicalCalendarLegend />
 
             <div className="mt-4 grid grid-cols-7 gap-1">
               {weekdays.map((weekday, index) => (
@@ -220,6 +240,7 @@ export function MonthlyCalendar({
                   date={date}
                   weekday={index % 7}
                   record={recordsByDate.get(date)}
+                  medicalEvents={medicalEventsByDate.get(date) ?? []}
                   selected={!exportMode && selectedDate === date}
                   pdfMode={exportMode}
                   pdfSelected={exportDates.has(date)}
@@ -235,8 +256,10 @@ export function MonthlyCalendar({
             <SelectedDaySummary
               date={selectedDate}
               record={selectedRecord}
+              medicalEvents={medicalEventsByDate.get(selectedDate) ?? []}
               onEdit={() => selectedRecord && onEdit(selectedRecord)}
               onCreate={() => onCreate(selectedDate)}
+              onOpenMedical={onOpenMedical}
             />
           ) : null}
         </div>
@@ -271,7 +294,7 @@ function SummaryItem({ label, value, wide = false }: { label: string; value: str
   return <div className={`rounded-xl bg-slate-50 p-3 ${wide ? "col-span-2 sm:col-span-1" : ""}`}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 text-lg font-bold tabular-nums text-teal-800">{value}</dd></div>;
 }
 
-function CalendarDay({ date, weekday, record, selected, pdfMode, pdfSelected, generating, today, onSelect }: { date: string; weekday: number; record?: StoredWorkRecord; selected: boolean; pdfMode: boolean; pdfSelected: boolean; generating: boolean; today: boolean; onSelect: () => void }) {
+function CalendarDay({ date, weekday, record, medicalEvents, selected, pdfMode, pdfSelected, generating, today, onSelect }: { date: string; weekday: number; record?: StoredWorkRecord; medicalEvents: MedicalEvent[]; selected: boolean; pdfMode: boolean; pdfSelected: boolean; generating: boolean; today: boolean; onSelect: () => void }) {
   const day = Number(date.slice(-2));
   const status = record?.type;
   const statusLabel = status ? attendanceLabels[status] : "記録なし";
@@ -281,7 +304,7 @@ function CalendarDay({ date, weekday, record, selected, pdfMode, pdfSelected, ge
   return (
     <button
       type="button"
-      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${pdfMode ? pdfSelected ? "、出力対象として選択済み" : "、出力対象として未選択" : ""}`}
+      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${medicalEvents.length ? `、${medicalEvents.map((event) => medicalEventLabels[event.type]).join("、")}` : ""}${pdfMode ? pdfSelected ? "、出力対象として選択済み" : "、出力対象として未選択" : ""}`}
       aria-pressed={pdfMode ? pdfSelected : selected}
       disabled={generating || (pdfMode && !record)}
       onClick={onSelect}
@@ -290,6 +313,7 @@ function CalendarDay({ date, weekday, record, selected, pdfMode, pdfSelected, ge
       {pdfSelected ? <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-teal-800 shadow">✓</span> : null}
       <span className={`font-bold tabular-nums ${status ? "text-white" : weekdayText}`}>{day}</span>
       <span className={`mt-0.5 min-h-4 font-bold ${status ? "text-white" : "text-slate-300"}`}>{status ? shortAttendanceLabels[status] : "−"}</span>
+      {medicalEvents.length ? <span aria-hidden="true" className="mt-0.5 flex max-w-full gap-0.5">{[...new Set(medicalEvents.map((event) => event.type))].map((type) => <span key={type} className={`h-2 w-2 rounded-full ring-1 ring-white ${medicalEventStyles[type]}`} />)}</span> : null}
     </button>
   );
 }
@@ -325,7 +349,14 @@ function CalendarLegend() {
   return <ul aria-label="勤務区分の凡例" className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-600">{items.map(([label, color]) => <li key={label} className="flex items-center gap-1.5"><span aria-hidden="true" className={`h-3 w-3 rounded-sm ${color}`} />{label}</li>)}</ul>;
 }
 
-function SelectedDaySummary({ date, record, onEdit, onCreate }: { date: string; record: StoredWorkRecord | null; onEdit: () => void; onCreate: () => void }) {
+const medicalEventLabels = { visit: "通院", deadline: "予約期限", appointment: "予約" } as const;
+const medicalEventStyles = { visit: "bg-cyan-700", deadline: "bg-amber-500", appointment: "bg-violet-600" } as const;
+
+function MedicalCalendarLegend() {
+  return <ul aria-label="通院予定の凡例" className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-600">{(Object.keys(medicalEventLabels) as Array<keyof typeof medicalEventLabels>).map((type) => <li key={type} className="flex items-center gap-1.5"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${medicalEventStyles[type]}`} />{medicalEventLabels[type]}</li>)}</ul>;
+}
+
+function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onOpenMedical }: { date: string; record: StoredWorkRecord | null; medicalEvents: MedicalEvent[]; onEdit: () => void; onCreate: () => void; onOpenMedical: (recordId: string) => void }) {
   const causes = record ? getCauseDisplayLabels(record.causes) : [];
   return (
     <section className="rounded-[22px] border border-slate-100 bg-white p-4 shadow-sm shadow-slate-200/40">
@@ -344,6 +375,7 @@ function SelectedDaySummary({ date, record, onEdit, onCreate }: { date: string; 
       ) : (
         <div className="mt-3"><p className="text-sm text-slate-500">この日の記録はありません</p><button type="button" onClick={onCreate} className="mt-4 min-h-12 w-full rounded-xl bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800">この日を記録する</button></div>
       )}
+      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <button key={`${event.type}-${event.record.id}-${index}`} type="button" onClick={() => onOpenMedical(event.record.id)} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 text-left"><span className="text-sm font-bold text-teal-800">{medicalEventLabels[event.type]}</span><span className="min-w-0 truncate text-sm text-slate-600">{event.record.department}{event.record.hospitalName ? `・${event.record.hospitalName}` : ""}</span></button>)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}</div>
     </section>
   );
 }

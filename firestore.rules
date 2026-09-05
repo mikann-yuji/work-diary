@@ -18,6 +18,19 @@ service cloud.firestore {
           && request.resource.data.date == recordDate
           && request.resource.data.schemaVersion is int;
       }
+
+      match /medicalRecords/{recordId} {
+        allow read, delete:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create, update:
+          if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.visitDate is string
+          && request.resource.data.department is string
+          && request.resource.data.schemaVersion is int;
+      }
     }
 
     match /{document=**} {

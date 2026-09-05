@@ -7,6 +7,7 @@ import type { DiaryTab } from "@/components/work-diary";
 
 const menuItems: Array<{ id: DiaryTab; label: string }> = [
   { id: "today", label: "今日の記録" },
+  { id: "medical", label: "通院記録" },
   { id: "calendar", label: "カレンダー" },
   { id: "history", label: "履歴" },
 ];
