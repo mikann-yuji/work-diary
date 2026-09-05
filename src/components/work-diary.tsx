@@ -46,6 +46,8 @@ import {
   futureMeasureExecutionLabels,
 } from "@/constants/measure-options";
 import { calculateLostMinutes, formatDuration } from "@/lib/work-time";
+import { deleteDraft, getDraft, type DraftEntry } from "@/lib/drafts/indexed-db";
+import { useDraftAutosave, type DraftSaveState } from "@/hooks/use-draft-autosave";
 import {
   attendanceLabels,
   attendanceTypes,
@@ -132,6 +134,9 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastMessage | null>(null);
+  const workDraftKey = uid ? `work-record:${uid}:${form.date}` : "work-record:unavailable";
+  const workDraft = useMemo<DraftEntry<FormState>>(() => ({ key: workDraftKey, uid: uid ?? "", kind: "work-record", mode: "date", targetId: form.date, payload: form, updatedAt: 0 }), [workDraftKey, uid, form]);
+  const draftAutosave = useDraftAutosave({ draft: workDraft, enabled: Boolean(uid) && !dateLoading && !saving });
 
   const lostMinutes = useMemo(
     () => calculateLostMinutes(
@@ -187,11 +192,30 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
     let cancelled = false;
 
     void getRecordByDate(uid, form.date)
-      .then((record) => {
+      .then(async (record) => {
         if (cancelled || sequence !== loadSequenceRef.current) return;
-        const nextForm = record ? formFromRecord(record) : createInitialForm(form.date);
+        const firestoreForm = record ? formFromRecord(record) : createInitialForm(form.date);
+        const firestoreSignature = JSON.stringify(firestoreForm);
+        const draftKey = `work-record:${uid}:${form.date}`;
+        const draft = await getDraft<FormState>(draftKey);
+        if (cancelled || sequence !== loadSequenceRef.current) return;
+        let nextForm = firestoreForm;
+        if (draft?.payload?.date === form.date && JSON.stringify(draft.payload) !== firestoreSignature) {
+          const firestoreUpdatedAt = record?.updatedAt?.toMillis() ?? null;
+          const restoreDraft = !record || (firestoreUpdatedAt !== null
+            ? draft.updatedAt > firestoreUpdatedAt
+            : window.confirm("保存されている下書きを復元しますか？\nキャンセルすると正式保存済みの記録を表示します。"));
+          if (restoreDraft) {
+            nextForm = draft.payload;
+            showToast("保存されていた下書きを復元しました", "success");
+          } else {
+            await deleteDraft(draftKey);
+          }
+        } else if (draft) {
+          await deleteDraft(draftKey);
+        }
         setForm(nextForm);
-        setBaseline(JSON.stringify(nextForm));
+        setBaseline(firestoreSignature);
         setRecordExists(record !== null);
       })
       .catch((error: unknown) => {
@@ -268,8 +292,10 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
 
     try {
       const result = await saveOrUpdateRecord(uid, record);
+      await deleteDraft(workDraftKey).catch(() => undefined);
       setRecordExists(true);
       setBaseline(JSON.stringify(form));
+      draftAutosave.markClean(JSON.stringify(form));
       showToast(result.created ? "記録を保存しました" : "記録を更新しました", "success");
     } catch (error) {
       console.error("Firestore record save failed", getErrorCode(error));
@@ -280,15 +306,45 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
     }
   }
 
-  function editRecord(record: StoredWorkRecord) {
-    if (dirty && !window.confirm("入力中の内容があります。履歴の記録を開くと入力内容は失われます。開きますか？")) return;
-    loadSequenceRef.current += 1;
-    const nextForm = formFromRecord(record);
+  async function discardWorkDraft() {
+    if (!uid || !window.confirm("この下書きを削除しますか？\n入力した内容は元に戻せません。")) return;
+    await deleteDraft(workDraftKey);
+    const record = await getRecordByDate(uid, form.date);
+    const nextForm = record ? formFromRecord(record) : createInitialForm(form.date);
     setForm(nextForm);
     setBaseline(JSON.stringify(nextForm));
+    setRecordExists(Boolean(record));
+    draftAutosave.markClean(JSON.stringify(nextForm));
+  }
+
+  async function editRecord(record: StoredWorkRecord) {
+    if (dirty && !window.confirm("入力中の内容があります。履歴の記録を開くと入力内容は失われます。開きますか？")) return;
+    loadSequenceRef.current += 1;
+    const firestoreForm = formFromRecord(record);
+    if (record.date !== form.date) {
+      setForm(firestoreForm);
+      setBaseline(JSON.stringify(firestoreForm));
+      setRecordExists(true);
+      setDateLoading(true);
+      setFormError(null);
+      onTabChange("today");
+      scrollToForm(formStartRef);
+      return;
+    }
+    const draftKey = uid ? `work-record:${uid}:${record.date}` : null;
+    const draft = draftKey ? await getDraft<FormState>(draftKey) : undefined;
+    const firestoreUpdatedAt = record.updatedAt?.toMillis() ?? null;
+    const restoreDraft = draft && JSON.stringify(draft.payload) !== JSON.stringify(firestoreForm) && (firestoreUpdatedAt !== null
+      ? draft.updatedAt > firestoreUpdatedAt
+      : window.confirm("保存されている下書きを復元しますか？\nキャンセルすると正式保存済みの記録を表示します。"));
+    const nextForm = restoreDraft ? draft.payload : firestoreForm;
+    if (draftKey && draft && !restoreDraft) await deleteDraft(draftKey);
+    setForm(nextForm);
+    setBaseline(JSON.stringify(firestoreForm));
     setRecordExists(true);
     setDateLoading(false);
     setFormError(null);
+    if (restoreDraft) showToast("保存されていた下書きを復元しました", "success");
     onTabChange("today");
     scrollToForm(formStartRef);
   }
@@ -359,7 +415,10 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
           <button type="submit" disabled={!uid || dateLoading || saving} className="min-h-14 w-full rounded-2xl bg-teal-700 px-5 text-base font-bold text-white shadow-lg shadow-teal-900/15 transition hover:bg-teal-800 active:scale-[0.99] disabled:cursor-wait disabled:opacity-55">
             {saving ? "保存しています…" : recordExists ? "この日の記録を更新" : "この日の記録を保存"}
           </button>
+          <DraftStatus state={draftAutosave.state} savedAt={draftAutosave.savedAt} />
+          {draftAutosave.state !== "clean" ? <button type="button" onClick={() => void discardWorkDraft()} disabled={dateLoading || saving} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 disabled:opacity-50">下書きを破棄</button> : null}
           <p className="text-center text-xs leading-5 text-slate-400">記録はログイン中のアカウントごとに保存されます。</p>
+          <p className="text-center text-xs leading-5 text-slate-400">下書きはこの端末に保存されます。</p>
         </form>
       ) : tab === "medical" ? (
         <MedicalRecordsPage uid={uid ?? ""} records={medicalRecords} state={medicalState} requestedRecordId={requestedMedicalId} onRequestHandled={() => setRequestedMedicalId(null)} onToast={showToast} />
@@ -371,6 +430,11 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
       <Toast toast={toast} onClose={closeToast} />
     </section>
   );
+}
+
+function DraftStatus({ state, savedAt }: { state: DraftSaveState; savedAt: number | null }) {
+  const label = state === "changed" ? "変更あり" : state === "saving" ? "下書きを保存中…" : state === "saved" && savedAt ? `下書き保存済み ${new Intl.DateTimeFormat("ja-JP", { hour: "2-digit", minute: "2-digit" }).format(savedAt)}` : state === "error" ? "下書きを保存できませんでした" : "";
+  return label ? <p role="status" aria-live="polite" className={`text-center text-xs ${state === "error" ? "text-rose-700" : "text-slate-500"}`}>{label}</p> : null;
 }
 
 function History({ records, state, onEdit }: { records: StoredWorkRecord[]; state: HistoryState; onEdit: (record: StoredWorkRecord) => void }) {

@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth-provider";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { Toast, type ToastMessage } from "@/components/toast";
 import { WorkDiary, type DiaryTab } from "@/components/work-diary";
+import { deleteDraftsForUser, hasDraftsForUser } from "@/lib/drafts/indexed-db";
 
 export function AppShell() {
   const { user, loading, signingIn, authError, databaseError, signInWithGoogle, logout } = useAuth();
@@ -19,10 +20,14 @@ export function AppShell() {
   if (!user) {
     return <LoginScreen signingIn={signingIn} error={authError} onLogin={signInWithGoogle} />;
   }
+  const uid = user.uid;
 
   async function handleLogout() {
     if (loggingOut) return;
+    const hasDrafts = await hasDraftsForUser(uid).catch(() => false);
+    if (hasDrafts && !window.confirm("未保存の下書きがあります。\nログアウトすると、この端末に保存された下書きは削除されます。\nログアウトしますか？")) return;
     setLoggingOut(true);
+    if (hasDrafts) await deleteDraftsForUser(uid).catch(() => undefined);
     const succeeded = await logout();
     setLoggingOut(false);
     if (!succeeded) {
