@@ -310,10 +310,10 @@ function CalendarDay({ date, weekday, record, medicalEvents, selected, pdfMode, 
       onClick={onSelect}
       className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-xs transition hover:brightness-95 disabled:cursor-not-allowed ${appearance} ${selected ? "ring-2 ring-teal-900 ring-offset-1" : ""} ${pdfSelected ? "ring-4 ring-cyan-300 ring-offset-1" : ""} ${pdfMode && !record ? "opacity-35" : ""} ${today ? "outline-2 outline-offset-1 outline-teal-400" : ""}`}
     >
-      {pdfSelected ? <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-teal-800 shadow">✓</span> : null}
+      {pdfSelected ? <span aria-hidden="true" className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-teal-800 shadow">✓</span> : null}
+      {medicalEvents.length ? <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex max-w-[22px] flex-wrap justify-end gap-0.5">{[...new Set(medicalEvents.map((event) => event.type))].map((type) => <span key={type} className={`h-2 w-2 rounded-full ring-1 ring-white ${medicalEventStyles[type]}`} />)}</span> : null}
       <span className={`font-bold tabular-nums ${status ? "text-white" : weekdayText}`}>{day}</span>
       <span className={`mt-0.5 min-h-4 font-bold ${status ? "text-white" : "text-slate-300"}`}>{status ? shortAttendanceLabels[status] : "−"}</span>
-      {medicalEvents.length ? <span aria-hidden="true" className="mt-0.5 flex max-w-full gap-0.5">{[...new Set(medicalEvents.map((event) => event.type))].map((type) => <span key={type} className={`h-2 w-2 rounded-full ring-1 ring-white ${medicalEventStyles[type]}`} />)}</span> : null}
     </button>
   );
 }
