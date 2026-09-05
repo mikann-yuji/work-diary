@@ -1,7 +1,15 @@
 [
   {
-    "origin": ["*"],
-    "method": ["GET"],
+    "origin": [
+      "https://work-diary-rose.vercel.app",
+      "http://localhost:3000"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Cache-Control"
+    ],
     "maxAgeSeconds": 3600
   }
 ]

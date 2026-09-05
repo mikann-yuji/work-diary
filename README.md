@@ -1,5 +1,15 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Firebase Storage CORS
+
+通院記録の保存済み画像は、Firebase Authenticationで認証したブラウザからBlobとして取得します。初回のみ、Google Cloud ShellまたはGoogle Cloud CLIで次を実行し、`storage.cors.json`をStorageバケットへ反映してください。
+
+```bash
+gcloud storage buckets update gs://work-diary-b0f75.firebasestorage.app --cors-file=storage.cors.json
+```
+
+この設定は画像を公開するものではありません。読み取り権限は引き続き`storage.rules`でUID単位に制限されます。
+
 ## Getting Started
 
 First, run the development server:
