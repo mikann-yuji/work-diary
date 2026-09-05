@@ -300,18 +300,20 @@ function CalendarDay({ date, weekday, record, medicalEvents, selected, pdfMode, 
   const statusLabel = status ? attendanceLabels[status] : "記録なし";
   const weekdayText = !status && weekday === 0 ? "text-rose-600" : !status && weekday === 6 ? "text-blue-600" : "text-slate-700";
   const appearance = status ? attendanceStyles[status] : "border-slate-100 bg-slate-50/60";
+  const medicalEventCounts = countMedicalEvents(medicalEvents);
+  const medicalSummary = medicalEventCounts.map(({ type, count }) => `${medicalEventLabels[type]}${count > 1 ? `${count}件` : ""}`).join("、");
 
   return (
     <button
       type="button"
-      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${medicalEvents.length ? `、${medicalEvents.map((event) => medicalEventLabels[event.type]).join("、")}` : ""}${pdfMode ? pdfSelected ? "、出力対象として選択済み" : "、出力対象として未選択" : ""}`}
+      aria-label={`${formatAccessibleDate(date)}、${statusLabel}${medicalSummary ? `、${medicalSummary}` : ""}${pdfMode ? pdfSelected ? "、出力対象として選択済み" : "、出力対象として未選択" : ""}`}
       aria-pressed={pdfMode ? pdfSelected : selected}
       disabled={generating || (pdfMode && !record)}
       onClick={onSelect}
       className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center rounded-lg border px-0.5 py-1 text-xs transition hover:brightness-95 disabled:cursor-not-allowed ${appearance} ${selected ? "ring-2 ring-teal-900 ring-offset-1" : ""} ${pdfSelected ? "ring-4 ring-cyan-300 ring-offset-1" : ""} ${pdfMode && !record ? "opacity-35" : ""} ${today ? "outline-2 outline-offset-1 outline-teal-400" : ""}`}
     >
       {pdfSelected ? <span aria-hidden="true" className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] font-black text-teal-800 shadow">✓</span> : null}
-      {medicalEvents.length ? <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex max-w-[22px] flex-wrap justify-end gap-0.5">{[...new Set(medicalEvents.map((event) => event.type))].map((type) => <span key={type} className={`h-2 w-2 rounded-full ring-1 ring-white ${medicalEventStyles[type]}`} />)}</span> : null}
+      {medicalEventCounts.length ? <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex max-w-[38px] flex-col items-end gap-px">{medicalEventCounts.map(({ type, count }) => <span key={type} className={`whitespace-nowrap rounded-full px-1 text-[8px] font-bold leading-[11px] text-white ring-1 ring-white ${medicalEventStyles[type]}`}>{medicalEventLabels[type]}{count > 1 ? `${count}件` : ""}</span>)}</span> : null}
       <span className={`font-bold tabular-nums ${status ? "text-white" : weekdayText}`}>{day}</span>
       <span className={`mt-0.5 min-h-4 font-bold ${status ? "text-white" : "text-slate-300"}`}>{status ? shortAttendanceLabels[status] : "−"}</span>
     </button>
@@ -351,6 +353,13 @@ function CalendarLegend() {
 
 const medicalEventLabels = { visit: "通院", deadline: "予約期限", appointment: "予約" } as const;
 const medicalEventStyles = { visit: "bg-cyan-700", deadline: "bg-amber-500", appointment: "bg-violet-600" } as const;
+
+function countMedicalEvents(events: MedicalEvent[]) {
+  return (Object.keys(medicalEventLabels) as MedicalEvent["type"][]).flatMap((type) => {
+    const count = events.filter((event) => event.type === type).length;
+    return count > 0 ? [{ type, count }] : [];
+  });
+}
 
 function MedicalCalendarLegend() {
   return <ul aria-label="通院予定の凡例" className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-600">{(Object.keys(medicalEventLabels) as Array<keyof typeof medicalEventLabels>).map((type) => <li key={type} className="flex items-center gap-1.5"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${medicalEventStyles[type]}`} />{medicalEventLabels[type]}</li>)}</ul>;

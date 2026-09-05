@@ -27,6 +27,7 @@ service cloud.firestore {
         allow create, update:
           if request.auth != null
           && request.auth.uid == userId
+          && request.resource.data.medicalRecordId == recordId
           && request.resource.data.visitDate is string
           && request.resource.data.department is string
           && request.resource.data.schemaVersion is int;

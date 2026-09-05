@@ -30,6 +30,7 @@ export type MedicalRecordInput = {
 
 export type StoredMedicalRecord = MedicalRecordInput & {
   id: string;
+  medicalRecordId: string;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
   schemaVersion: number;

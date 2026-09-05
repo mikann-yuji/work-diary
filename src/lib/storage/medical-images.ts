@@ -35,7 +35,7 @@ export async function uploadMedicalImage(
   onProgress: (progress: number) => void,
 ): Promise<MedicalImageReference> {
   const id = crypto.randomUUID();
-  const path = `users/${uid}/medical-records/${recordId}/${kind}/${id}.jpg`;
+  const path = `users/${uid}/medicalRecords/${recordId}/${kind}/${id}.jpg`;
   const task = uploadBytesResumable(ref(firebaseStorage, path), blob, { contentType: "image/jpeg", cacheControl: "private,max-age=3600" });
   await new Promise<void>((resolve, reject) => task.on("state_changed", (snapshot) => onProgress(snapshot.totalBytes ? snapshot.bytesTransferred / snapshot.totalBytes : 0), reject, resolve));
   return { id, path, contentType: "image/jpeg" };

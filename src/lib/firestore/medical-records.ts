@@ -2,6 +2,7 @@
 
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -25,12 +26,17 @@ export async function saveMedicalRecord(uid: string, recordId: string, input: Me
     const snapshot = await transaction.get(reference);
     transaction.set(reference, {
       ...input,
+      medicalRecordId: recordId,
       createdAt: snapshot.exists() ? snapshot.data().createdAt ?? serverTimestamp() : serverTimestamp(),
       updatedAt: serverTimestamp(),
       schemaVersion: 1,
     });
     return { created: !snapshot.exists() };
   });
+}
+
+export function deleteMedicalRecord(uid: string, medicalRecordId: string) {
+  return deleteDoc(doc(firestore, "users", uid, "medicalRecords", medicalRecordId));
 }
 
 export function subscribeMedicalRecords(
@@ -47,6 +53,7 @@ export function subscribeMedicalRecords(
 function fromDocument(id: string, data: DocumentData): StoredMedicalRecord {
   return {
     id,
+    medicalRecordId: typeof data.medicalRecordId === "string" ? data.medicalRecordId : id,
     visitDate: typeof data.visitDate === "string" ? data.visitDate : "",
     department: typeof data.department === "string" ? data.department : "",
     hospitalName: typeof data.hospitalName === "string" ? data.hospitalName : "",

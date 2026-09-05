@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { SectionCard } from "@/components/wellness-sections";
 import { getLocalDateString } from "@/lib/calendar";
-import { createMedicalRecordId, saveMedicalRecord } from "@/lib/firestore/medical-records";
+import { createMedicalRecordId, deleteMedicalRecord, saveMedicalRecord } from "@/lib/firestore/medical-records";
 import {
   deleteMedicalImage,
   getMedicalImageBlob,
@@ -168,6 +168,24 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     }
   }
 
+  async function removeRecord() {
+    if (!editingId || savingRef.current || !window.confirm("この通院記録を削除しますか？")) return;
+    savingRef.current = true;
+    setSaving(true);
+    const imagePaths = [...existingPrescription, ...existingGuides].map((image) => image.path);
+    try {
+      await deleteMedicalRecord(uid, editingId);
+      await Promise.all([...imagePaths, ...removedPaths].map(deleteMedicalImage));
+      resetForm();
+      onToast("通院記録を削除しました", "success");
+    } catch {
+      onToast("通院記録を削除できませんでした", "error");
+    } finally {
+      setSaving(false);
+      savingRef.current = false;
+    }
+  }
+
   const weekday = formatWeekday(form.visitDate);
   return <div className="space-y-5 bg-slate-50/50 p-4 sm:p-5">
     <form ref={formRef} onSubmit={submit} className="space-y-5" aria-busy={saving}>
@@ -184,6 +202,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
       <SectionCard title="画像" description="画像は端末内で縮小し、本人だけがアクセスできるStorageへ保存します。"><div className="space-y-5"><ImagePicker title="処方箋の画像" kind="prescriptions" existing={existingPrescription} pending={pendingPrescription} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /><ImagePicker title="薬の説明書の画像" kind="medication-guides" existing={existingGuides} pending={pendingGuides} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /></div>{preparingImages ? <p role="status" className="mt-3 text-sm font-bold text-teal-800">画像を準備しています…</p> : null}</SectionCard>
       {uploadProgress !== null ? <p className="text-center text-sm font-bold text-teal-800" aria-live="polite">画像をアップロードしています（{uploadProgress}%）</p> : null}
       <button type="submit" disabled={saving || preparingImages} className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-teal-700 px-5 text-base font-bold text-white shadow-lg shadow-teal-900/15 disabled:cursor-wait disabled:opacity-55">{saving ? <><span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-teal-200 border-t-white" />保存しています…</> : editingId ? "通院記録を更新" : "通院記録を保存"}</button>
+      {editingId ? <button type="button" onClick={() => void removeRecord()} disabled={saving || preparingImages} className="min-h-12 w-full rounded-2xl border border-rose-200 bg-white px-5 text-sm font-bold text-rose-700 disabled:opacity-50">この通院記録を削除</button> : null}
     </form>
     <MedicalRecordList records={records} state={state} onEdit={loadRecord} />
   </div>;

@@ -2,7 +2,7 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /users/{userId}/medical-records/{recordId}/{allPaths=**} {
+    match /users/{userId}/medicalRecords/{recordId}/{allPaths=**} {
       allow read:
         if request.auth != null
         && request.auth.uid == userId;
@@ -14,6 +14,13 @@ service firebase.storage {
           request.resource.size < 12 * 1024 * 1024
           && request.resource.contentType == 'image/jpeg'
         ));
+    }
+
+    // Keep previously uploaded images private and readable by their owner.
+    match /users/{userId}/medical-records/{recordId}/{allPaths=**} {
+      allow read, delete:
+        if request.auth != null
+        && request.auth.uid == userId;
     }
 
     match /{allPaths=**} {
