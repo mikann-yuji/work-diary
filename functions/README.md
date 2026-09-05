@@ -4,4 +4,4 @@
 
 `sendMedicalNotificationTest` is an authenticated callable function. The app's **通知メールの動作確認** control calls it and sends a generic test message only to the current Firebase Authentication user's email address. It does not accept a recipient address or medical content from the client.
 
-`APP_URL` is a non-secret string parameter with `https://work-diary.vercel.app` as its default. Change the default in `src/index.ts` before deployment if the production alias differs.
+`APP_URL` is a non-secret string parameter with `https://work-diary-rose.vercel.app` as its default.

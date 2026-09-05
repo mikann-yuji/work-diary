@@ -18,7 +18,7 @@ const db = getFirestore();
 const auth = getAuth();
 const gmailUser = defineSecret("GMAIL_USER");
 const gmailAppPassword = defineSecret("GMAIL_APP_PASSWORD");
-const appUrl = defineString("APP_URL", { default: "https://work-diary.vercel.app" });
+const appUrl = defineString("APP_URL", { default: "https://work-diary-rose.vercel.app" });
 const runtimeOptions = { region: "asia-northeast1" as const, secrets: [gmailUser, gmailAppPassword] };
 const PROCESSING_LEASE_MS = 10 * 60 * 1000;
 
