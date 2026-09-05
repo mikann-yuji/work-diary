@@ -26,12 +26,16 @@ const shortAttendanceLabels: Record<AttendanceType, string> = {
   late: "遅",
   early: "早",
   absent: "欠",
+  holiday: "休",
+  plannedHoliday: "計",
 };
 const attendanceStyles: Record<AttendanceType, string> = {
   present: "border-teal-600 bg-teal-600 text-white",
   late: "border-orange-500 bg-orange-500 text-white",
   early: "border-indigo-500 bg-indigo-500 text-white",
   absent: "border-rose-600 bg-rose-600 text-white",
+  holiday: "border-slate-500 bg-slate-500 text-white",
+  plannedHoliday: "border-sky-500 bg-sky-500 text-white",
 };
 
 export function MonthlyCalendar({
@@ -346,6 +350,8 @@ function CalendarLegend() {
     ["遅刻", "bg-orange-500"],
     ["早退", "bg-indigo-500"],
     ["欠勤", "bg-rose-600"],
+    ["休日", "bg-slate-500"],
+    ["計画休日", "bg-sky-500"],
     ["未記録", "border border-slate-200 bg-slate-50"],
   ];
   return <ul aria-label="勤務区分の凡例" className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-600">{items.map(([label, color]) => <li key={label} className="flex items-center gap-1.5"><span aria-hidden="true" className={`h-3 w-3 rounded-sm ${color}`} />{label}</li>)}</ul>;
@@ -376,7 +382,7 @@ function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onO
             <Detail label="勤務区分" value={attendanceLabels[record.type]} />
             <Detail label="失った時間" value={formatDuration(record.lostMinutes)} />
             <Detail label="本来の勤務時間" value={`${record.scheduledStart}〜${record.scheduledEnd}`} />
-            <Detail label="実際の勤務時間" value={record.type === "absent" ? "勤務なし" : `${record.actualStart}〜${record.actualEnd}`} />
+            <Detail label="実際の勤務時間" value={record.type === "absent" || record.type === "holiday" || record.type === "plannedHoliday" ? "勤務なし" : `${record.actualStart}〜${record.actualEnd}`} />
           </dl>
           <div><p className="text-xs text-slate-500">主な原因</p><p className="mt-1 text-sm leading-6 text-slate-700">{causes.length > 0 ? causes.slice(0, 4).join("、") : "原因の記録なし"}</p></div>
           <button type="button" onClick={onEdit} className="min-h-12 w-full rounded-xl bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800">編集する</button>

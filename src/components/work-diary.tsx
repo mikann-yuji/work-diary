@@ -224,7 +224,9 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
   function changeAttendanceType(nextType: AttendanceType) {
     updateForm(nextType === "present"
       ? { type: nextType, actualStart: form.scheduledStart, actualEnd: form.scheduledEnd }
-      : { type: nextType });
+      : nextType === "absent" || nextType === "holiday" || nextType === "plannedHoliday"
+        ? { type: nextType, actualStart: "", actualEnd: "" }
+        : { type: nextType });
   }
 
   function changeScheduledStart(value: string) {
@@ -323,7 +325,7 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
 
                 <fieldset>
                   <legend className="label">区分</legend>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                     {attendanceTypes.map((value) => (
                       <button key={value} type="button" aria-pressed={form.type === value} onClick={() => changeAttendanceType(value)} className={`min-h-12 rounded-xl border text-base font-bold transition ${form.type === value ? "border-teal-700 bg-teal-700 text-white shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"}`}>
                         {attendanceLabels[value]}
@@ -333,7 +335,7 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
                 </fieldset>
 
                 <TimePair legend="本来の勤務時間" start={form.scheduledStart} end={form.scheduledEnd} onStart={changeScheduledStart} onEnd={changeScheduledEnd} requiredStart requiredEnd />
-                <TimePair legend="実際の勤務時間" start={form.actualStart} end={form.actualEnd} onStart={(actualStart) => updateForm({ actualStart })} onEnd={(actualEnd) => updateForm({ actualEnd })} disabled={form.type === "absent"} requiredStart={form.type === "present" || form.type === "late"} requiredEnd={form.type === "present" || form.type === "early"} />
+                <TimePair legend="実際の勤務時間" start={form.actualStart} end={form.actualEnd} onStart={(actualStart) => updateForm({ actualStart })} onEnd={(actualEnd) => updateForm({ actualEnd })} disabled={form.type === "absent" || form.type === "holiday" || form.type === "plannedHoliday"} requiredStart={form.type === "present" || form.type === "late"} requiredEnd={form.type === "present" || form.type === "early"} />
 
                 <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-4" aria-live="polite">
                   <div className="flex items-center justify-between gap-4">
@@ -451,5 +453,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 type TimePairProps = { legend: string; start: string; end: string; onStart: (value: string) => void; onEnd: (value: string) => void; disabled?: boolean; requiredStart?: boolean; requiredEnd?: boolean; };
 
 function TimePair({ legend, start, end, onStart, onEnd, disabled = false, requiredStart = false, requiredEnd = false }: TimePairProps) {
-  return <fieldset disabled={disabled} className={disabled ? "opacity-45" : ""}><legend className="label">{legend}{disabled ? <span className="ml-2 font-normal text-slate-400">（欠勤のため入力不要）</span> : null}</legend><div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 overflow-hidden"><input aria-label={`${legend}の開始`} required={requiredStart} type="time" value={start} onChange={(event) => onStart(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /><span className="text-slate-400">〜</span><input aria-label={`${legend}の終了`} required={requiredEnd} type="time" value={end} onChange={(event) => onEnd(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /></div></fieldset>;
+  return <fieldset disabled={disabled} className={disabled ? "opacity-45" : ""}><legend className="label">{legend}{disabled ? <span className="ml-2 font-normal text-slate-400">（勤務のない区分のため入力不要）</span> : null}</legend><div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 overflow-hidden"><input aria-label={`${legend}の開始`} required={requiredStart} type="time" value={start} onChange={(event) => onStart(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /><span className="text-slate-400">〜</span><input aria-label={`${legend}の終了`} required={requiredEnd} type="time" value={end} onChange={(event) => onEnd(event.target.value)} className="input min-w-0 max-w-full px-1 text-center sm:px-3" /></div></fieldset>;
 }

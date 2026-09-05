@@ -52,6 +52,8 @@ export function summarizeMonth(
     late: 0,
     early: 0,
     absent: 0,
+    holiday: 0,
+    plannedHoliday: 0,
   };
   let recordCount = 0;
   let lostMinutes = 0;

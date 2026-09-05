@@ -78,7 +78,7 @@ export async function saveOrUpdateRecord(
       ...record,
       createdAt,
       updatedAt: serverTimestamp(),
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
 
     return { created: !snapshot.exists() };

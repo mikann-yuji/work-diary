@@ -1,4 +1,4 @@
-export type AttendanceType = "present" | "late" | "absent" | "early";
+export type AttendanceType = "present" | "late" | "absent" | "early" | "holiday" | "plannedHoliday";
 
 export type CauseCategoryId =
   | "sleep"
@@ -79,11 +79,13 @@ export type WorkRecord = {
   memo: string;
 };
 
-export const attendanceTypes: AttendanceType[] = ["present", "late", "absent", "early"];
+export const attendanceTypes: AttendanceType[] = ["present", "late", "early", "absent", "holiday", "plannedHoliday"];
 
 export const attendanceLabels: Record<AttendanceType, string> = {
   present: "出勤",
   late: "遅刻",
   absent: "欠勤",
   early: "早退",
+  holiday: "休日",
+  plannedHoliday: "計画休日",
 };

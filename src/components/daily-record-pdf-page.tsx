@@ -49,8 +49,8 @@ export function DailyRecordPdfPage({ record, density }: { record: StoredWorkReco
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", border: "1px solid #b8c8c6" }}>
             <PdfValue label="本来の開始" value={record.scheduledStart} padding={style.cellPadding} />
             <PdfValue label="本来の終了" value={record.scheduledEnd} padding={style.cellPadding} />
-            <PdfValue label="実際の開始" value={record.type === "absent" ? "-" : record.actualStart || "-"} padding={style.cellPadding} />
-            <PdfValue label="実際の終了" value={record.type === "absent" ? "-" : record.actualEnd || "-"} padding={style.cellPadding} />
+            <PdfValue label="実際の開始" value={record.type === "absent" || record.type === "holiday" || record.type === "plannedHoliday" ? "-" : record.actualStart || "-"} padding={style.cellPadding} />
+            <PdfValue label="実際の終了" value={record.type === "absent" || record.type === "holiday" || record.type === "plannedHoliday" ? "-" : record.actualEnd || "-"} padding={style.cellPadding} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", border: "1px solid #b8c8c6", borderTop: 0 }}>
             <PdfValue label="失った時間" value={formatDuration(record.lostMinutes)} padding={style.cellPadding} />
