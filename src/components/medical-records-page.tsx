@@ -15,11 +15,12 @@ import {
 import type { MedicalImageKind, MedicalImageReference, MedicalRecordInput, ReservationStatus, StoredMedicalRecord, VisitMethod } from "@/types/medical-record";
 import { deleteDraft, deleteDraftImage, getDraft, getDraftImages, listNewMedicalDrafts, putDraftImage, type DraftEntry } from "@/lib/drafts/indexed-db";
 import { useDraftAutosave, type DraftSaveState } from "@/hooks/use-draft-autosave";
+import { sendMedicalNotificationTest } from "@/lib/firebase/notification-test";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type FormState = Omit<MedicalRecordInput, "prescriptionImages" | "medicationGuideImages" | "diagnosisResultImages">;
 type PendingImage = { id: string; blob: Blob; url: string };
-type Errors = Partial<Record<"visitDate" | "department" | "visitMethod" | "reservationDeadline" | "reservationStatus" | "appointmentDateTime", string>>;
+type Errors = Partial<Record<"visitDate" | "department" | "visitMethod" | "reservationDeadline" | "reservationStatus" | "appointmentDateTime" | "hospitalUrl", string>>;
 type MedicalDraftPayload = { form: FormState; existingPrescription: MedicalImageReference[]; existingGuides: MedicalImageReference[]; existingDiagnosisResults: MedicalImageReference[]; removedPaths: string[]; pendingIds: Record<MedicalImageKind, string[]> };
 
 const visitMethods: Array<{ id: VisitMethod; label: string }> = [{ id: "initial", label: "初診" }, { id: "followUp", label: "再診" }, { id: "online", label: "オンライン" }];
@@ -40,6 +41,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   const [saving, setSaving] = useState(false);
   const [preparingImages, setPreparingImages] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [sendingTestMail, setSendingTestMail] = useState(false);
   const [draftId, setDraftId] = useState(() => crypto.randomUUID());
   const [draftReady, setDraftReady] = useState(false);
   const [newDraftChoices, setNewDraftChoices] = useState<DraftEntry<MedicalDraftPayload>[]>([]);
@@ -126,7 +128,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     replacePending(setPendingPrescription, []);
     replacePending(setPendingGuides, []);
     replacePending(setPendingDiagnosisResults, []);
-    setForm(payload.form);
+    setForm(normalizeForm(payload.form));
     setExistingPrescription(payload.existingPrescription);
     setExistingGuides(payload.existingGuides);
     setExistingDiagnosisResults(payload.existingDiagnosisResults ?? []);
@@ -148,11 +150,28 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   }
 
   function setHasNextVisit(value: boolean) {
-    update(value ? { hasNextVisit: true } : { hasNextVisit: false, reservationDeadline: null, reservationStatus: null, appointmentDateTime: null });
+    update(value ? { hasNextVisit: true } : {
+      hasNextVisit: false,
+      reservationDeadline: null,
+      reservationStatus: null,
+      reservationPhone: "",
+      hospitalUrl: "",
+      reservationNote: "",
+      appointmentDateTime: null,
+      appointmentDateJst: null,
+      appointmentBelongings: "",
+      appointmentNote: "",
+    });
   }
 
   function setReservationStatus(value: Exclude<ReservationStatus, null>) {
-    update(value === "booked" ? { reservationStatus: value } : { reservationStatus: value, appointmentDateTime: null });
+    update(value === "booked" ? { reservationStatus: value } : {
+      reservationStatus: value,
+      appointmentDateTime: null,
+      appointmentDateJst: null,
+      appointmentBelongings: "",
+      appointmentNote: "",
+    });
   }
 
   async function selectImages(files: FileList | null, kind: MedicalImageKind) {
@@ -200,6 +219,11 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     const nextErrors = validate(form);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
+      if (nextErrors.hospitalUrl) {
+        onToast("病院URLを正しく入力してください", "error");
+        requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus());
+        return;
+      }
       const missing = requiredFieldLabels.filter(({ id }) => nextErrors[id]).map(({ label }) => label);
       onToast(`必須項目を入力してください：${missing.join("、")}`, "error");
       requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>("[aria-invalid='true']")?.focus());
@@ -226,6 +250,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
       await Promise.all(removedPaths.map(deleteMedicalImage));
       replacePending(setPendingPrescription, []);
       replacePending(setPendingGuides, []);
+      replacePending(setPendingDiagnosisResults, []);
       setExistingPrescription(input.prescriptionImages);
       setExistingGuides(input.medicationGuideImages);
       setExistingDiagnosisResults(input.diagnosisResultImages);
@@ -275,6 +300,19 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     draftAutosave.markClean();
   }
 
+  async function sendTestMail() {
+    if (sendingTestMail) return;
+    setSendingTestMail(true);
+    try {
+      await sendMedicalNotificationTest();
+      onToast("通知テストメールを送信しました", "success");
+    } catch {
+      onToast("通知テストメールを送信できませんでした", "error");
+    } finally {
+      setSendingTestMail(false);
+    }
+  }
+
   async function openNewDraft(draft: DraftEntry<MedicalDraftPayload>) {
     setDraftReady(false);
     await restoreDraft(draft);
@@ -291,7 +329,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   const weekday = formatWeekday(form.visitDate);
   return <div className="space-y-5 bg-slate-50/50 p-4 sm:p-5">
     {newDraftChoices.length > 0 ? <NewMedicalDraftChooser drafts={newDraftChoices} onOpen={(draft) => void openNewDraft(draft)} onDelete={(draft) => void removeNewDraftChoice(draft)} onCreate={resetForm} /> : null}
-    <form ref={formRef} onSubmit={submit} className="relative space-y-5" aria-busy={saving || !draftReady}>
+    <form ref={formRef} onSubmit={submit} noValidate className="relative space-y-5" aria-busy={saving || !draftReady}>
       {!draftReady ? <div className="absolute inset-0 z-20 flex items-start justify-center bg-white/75 pt-32"><span role="status" aria-label="読み込み中" className="h-8 w-8 animate-spin rounded-full border-4 border-teal-100 border-t-teal-700" /></div> : null}
       <fieldset disabled={!draftReady || saving} className="contents">
       <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-bold text-slate-800">通院記録</h1><p className="mt-1 text-sm text-slate-500">{editingId ? "保存済みの記録を編集中" : "新しい通院記録"}</p></div>{editingId ? <button type="button" onClick={resetForm} disabled={saving} className="min-h-11 rounded-xl border border-teal-200 bg-white px-3 text-sm font-bold text-teal-800">新規作成</button> : null}</div>
@@ -300,7 +338,18 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
         <Field label="区分・診療科" required error={errors.department}><input aria-invalid={Boolean(errors.department)} value={form.department} onChange={(e) => update({ department: e.target.value })} placeholder="例：精神科、内科" className="input" /></Field>
         <Field label="病院名"><input value={form.hospitalName} onChange={(e) => update({ hospitalName: e.target.value })} className="input" /></Field>
         <ChoiceField legend="次回の通院" value={form.hasNextVisit === null ? null : String(form.hasNextVisit)} options={[{ id: "true", label: "有" }, { id: "false", label: "無" }]} onSelect={(id) => setHasNextVisit(id === "true")} />
-        {form.hasNextVisit ? <div className="space-y-4 rounded-2xl bg-teal-50/60 p-3"><Field label="予約する期限" required error={errors.reservationDeadline}><input aria-invalid={Boolean(errors.reservationDeadline)} type="date" value={form.reservationDeadline ?? ""} onChange={(e) => update({ reservationDeadline: e.target.value || null })} className="input" /></Field><ChoiceField legend="予約状況" required value={form.reservationStatus} options={reservationOptions} onSelect={(id) => setReservationStatus(id as Exclude<ReservationStatus, null>)} error={errors.reservationStatus} />{form.reservationStatus === "booked" ? <Field label="予約日時" required error={errors.appointmentDateTime}><input aria-invalid={Boolean(errors.appointmentDateTime)} type="datetime-local" value={form.appointmentDateTime ?? ""} onChange={(e) => update({ appointmentDateTime: e.target.value || null })} className="input" /></Field> : null}</div> : null}
+        {form.hasNextVisit ? <div className="space-y-4 rounded-2xl bg-teal-50/60 p-3">
+          <Field label="予約する期限" required error={errors.reservationDeadline}><input aria-invalid={Boolean(errors.reservationDeadline)} type="date" value={form.reservationDeadline ?? ""} onChange={(e) => update({ reservationDeadline: e.target.value || null })} className="input" /></Field>
+          <Field label="予約用電話番号"><input type="tel" inputMode="tel" value={form.reservationPhone} onChange={(e) => update({ reservationPhone: e.target.value })} className="input" /></Field>
+          <Field label="病院のURL" error={errors.hospitalUrl}><input aria-invalid={Boolean(errors.hospitalUrl)} type="url" inputMode="url" value={form.hospitalUrl} onChange={(e) => update({ hospitalUrl: e.target.value })} placeholder="https://example.jp" className="input" /></Field>
+          <TextArea label="予約期限の備考" value={form.reservationNote} onChange={(reservationNote) => update({ reservationNote })} />
+          <ChoiceField legend="予約状況" required value={form.reservationStatus} options={reservationOptions} onSelect={(id) => setReservationStatus(id as Exclude<ReservationStatus, null>)} error={errors.reservationStatus} />
+          {form.reservationStatus === "booked" ? <div className="space-y-4 rounded-xl border border-teal-100 bg-white p-3">
+            <Field label="予約日時" required error={errors.appointmentDateTime}><input aria-invalid={Boolean(errors.appointmentDateTime)} type="datetime-local" value={form.appointmentDateTime ?? ""} onChange={(e) => update({ appointmentDateTime: e.target.value || null, appointmentDateJst: e.target.value ? e.target.value.slice(0, 10) : null })} className="input" /></Field>
+            <TextArea label="持ち物" value={form.appointmentBelongings} onChange={(appointmentBelongings) => update({ appointmentBelongings })} />
+            <TextArea label="予約日の備考" value={form.appointmentNote} onChange={(appointmentNote) => update({ appointmentNote })} />
+          </div> : null}
+        </div> : null}
         <ChoiceField legend="受診方法" required value={form.visitMethod} options={visitMethods} onSelect={(id) => update({ visitMethod: id as VisitMethod })} error={errors.visitMethod} />
       </div></SectionCard>
       <SectionCard title="詳細情報" description="わかる範囲で記録できます。"><div className="space-y-4"><TextArea label="通院の経緯" value={form.background} onChange={(background) => update({ background })} /><Field label="症状の長さ"><input value={form.symptomDuration} onChange={(e) => update({ symptomDuration: e.target.value })} placeholder="例：3日間、2週間程度" className="input" /></Field><TextArea label="診断" value={form.diagnosis} onChange={(diagnosis) => update({ diagnosis })} /><TextArea label="処方" value={form.prescription} onChange={(prescription) => update({ prescription })} /><TextArea label="メモ" value={form.memo} onChange={(memo) => update({ memo })} /></div></SectionCard>
@@ -312,6 +361,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
       <p className="text-center text-xs text-slate-400">下書きはこの端末に保存されます。</p>
       </fieldset>
     </form>
+    <details className="rounded-2xl border border-slate-100 bg-white p-4 text-sm text-slate-600"><summary className="cursor-pointer font-bold text-slate-700">通知メールの動作確認</summary><p className="mt-3 leading-6">ログイン中のGoogleアカウントへ、医療情報を含まないテストメールを送ります。</p><button type="button" onClick={() => void sendTestMail()} disabled={sendingTestMail} className="mt-3 min-h-11 w-full rounded-xl border border-teal-200 bg-white px-4 font-bold text-teal-800 disabled:opacity-50">{sendingTestMail ? "送信しています…" : "自分にテストメールを送る"}</button></details>
     <MedicalRecordList records={records} state={state} onEdit={loadRecord} />
   </div>;
 }
@@ -352,10 +402,12 @@ function Field({ label, required, error, children }: { label: string; required?:
 function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <Field label={label}><textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} className="input min-h-28 resize-y py-3" /></Field>; }
 function ChoiceField<T extends string>({ legend, required, value, options, onSelect, error }: { legend: string; required?: boolean; value: T | null; options: Array<{ id: T; label: string }>; onSelect: (id: T) => void; error?: string }) { return <fieldset tabIndex={error ? -1 : undefined} aria-invalid={Boolean(error)}><legend className="label">{legend}{required ? <span className="ml-2 text-xs text-rose-600">必須</span> : <span className="ml-2 font-normal text-slate-400">（任意）</span>}</legend><div className={`grid gap-2 ${options.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>{options.map((option) => <button key={option.id} type="button" aria-pressed={value === option.id} onClick={() => onSelect(option.id)} className={`min-h-12 rounded-xl border font-bold ${value === option.id ? "border-teal-700 bg-teal-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{option.label}</button>)}</div>{error ? <p className="mt-1 text-sm text-rose-700">{error}</p> : null}</fieldset>; }
 
-function createInitialForm(): FormState { return { visitDate: getLocalDateString(), department: "", hospitalName: "", hasNextVisit: null, reservationDeadline: null, reservationStatus: null, appointmentDateTime: null, visitMethod: null, background: "", symptomDuration: "", diagnosis: "", prescription: "", memo: "" }; }
-function payloadFromRecord(record: StoredMedicalRecord): MedicalDraftPayload { return { form: { visitDate: record.visitDate, department: record.department, hospitalName: record.hospitalName, hasNextVisit: record.hasNextVisit, reservationDeadline: record.reservationDeadline, reservationStatus: record.reservationStatus, appointmentDateTime: record.appointmentDateTime, visitMethod: record.visitMethod, background: record.background, symptomDuration: record.symptomDuration, diagnosis: record.diagnosis, prescription: record.prescription, memo: record.memo }, existingPrescription: record.prescriptionImages, existingGuides: record.medicationGuideImages, existingDiagnosisResults: record.diagnosisResultImages, removedPaths: [], pendingIds: { prescriptions: [], "medication-guides": [], "diagnosis-results": [] } }; }
-function validate(form: FormState): Errors { const errors: Errors = {}; if (!form.visitDate) errors.visitDate = "通院した日付を入力してください"; if (!form.department.trim()) errors.department = "区分・診療科を入力してください"; if (!form.visitMethod) errors.visitMethod = "受診方法を選択してください"; if (form.hasNextVisit) { if (!form.reservationDeadline) errors.reservationDeadline = "予約する期限を入力してください"; if (!form.reservationStatus) errors.reservationStatus = "予約状況を選択してください"; if (form.reservationStatus === "booked" && !form.appointmentDateTime) errors.appointmentDateTime = "予約日時を入力してください"; } return errors; }
-function sanitizeForSave(form: FormState, prescriptionImages: MedicalImageReference[], medicationGuideImages: MedicalImageReference[], diagnosisResultImages: MedicalImageReference[]): MedicalRecordInput { return { ...form, department: form.department.trim(), hospitalName: form.hospitalName.trim(), reservationDeadline: form.hasNextVisit ? form.reservationDeadline : null, reservationStatus: form.hasNextVisit ? form.reservationStatus : null, appointmentDateTime: form.hasNextVisit && form.reservationStatus === "booked" ? form.appointmentDateTime : null, prescriptionImages, medicationGuideImages, diagnosisResultImages }; }
+function createInitialForm(): FormState { return { visitDate: getLocalDateString(), department: "", hospitalName: "", hasNextVisit: null, reservationDeadline: null, reservationStatus: null, reservationPhone: "", hospitalUrl: "", reservationNote: "", appointmentDateTime: null, appointmentDateJst: null, appointmentBelongings: "", appointmentNote: "", visitMethod: null, background: "", symptomDuration: "", diagnosis: "", prescription: "", memo: "" }; }
+function normalizeForm(value: Partial<FormState>): FormState { const initial = createInitialForm(); return { visitDate: value.visitDate ?? initial.visitDate, department: value.department ?? "", hospitalName: value.hospitalName ?? "", hasNextVisit: value.hasNextVisit ?? null, reservationDeadline: value.reservationDeadline ?? null, reservationStatus: value.reservationStatus ?? null, reservationPhone: value.reservationPhone ?? "", hospitalUrl: value.hospitalUrl ?? "", reservationNote: value.reservationNote ?? "", appointmentDateTime: value.appointmentDateTime ?? null, appointmentDateJst: value.appointmentDateJst ?? value.appointmentDateTime?.slice(0, 10) ?? null, appointmentBelongings: value.appointmentBelongings ?? "", appointmentNote: value.appointmentNote ?? "", visitMethod: value.visitMethod ?? null, background: value.background ?? "", symptomDuration: value.symptomDuration ?? "", diagnosis: value.diagnosis ?? "", prescription: value.prescription ?? "", memo: value.memo ?? "" }; }
+function payloadFromRecord(record: StoredMedicalRecord): MedicalDraftPayload { return { form: normalizeForm(record), existingPrescription: record.prescriptionImages, existingGuides: record.medicationGuideImages, existingDiagnosisResults: record.diagnosisResultImages, removedPaths: [], pendingIds: { prescriptions: [], "medication-guides": [], "diagnosis-results": [] } }; }
+function isAllowedHospitalUrl(value: string) { if (!value.trim()) return true; try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:"; } catch { return false; } }
+function validate(form: FormState): Errors { const errors: Errors = {}; if (!form.visitDate) errors.visitDate = "通院した日付を入力してください"; if (!form.department.trim()) errors.department = "区分・診療科を入力してください"; if (!form.visitMethod) errors.visitMethod = "受診方法を選択してください"; if (form.hasNextVisit) { if (!form.reservationDeadline) errors.reservationDeadline = "予約する期限を入力してください"; if (!form.reservationStatus) errors.reservationStatus = "予約状況を選択してください"; if (!isAllowedHospitalUrl(form.hospitalUrl)) errors.hospitalUrl = "http:// または https:// で始まるURLを入力してください"; if (form.reservationStatus === "booked" && !form.appointmentDateTime) errors.appointmentDateTime = "予約日時を入力してください"; } return errors; }
+function sanitizeForSave(form: FormState, prescriptionImages: MedicalImageReference[], medicationGuideImages: MedicalImageReference[], diagnosisResultImages: MedicalImageReference[]): MedicalRecordInput { const hasReservation = form.hasNextVisit === true; const isBooked = hasReservation && form.reservationStatus === "booked"; return { ...form, department: form.department.trim(), hospitalName: form.hospitalName.trim(), reservationDeadline: hasReservation ? form.reservationDeadline : null, reservationStatus: hasReservation ? form.reservationStatus : null, reservationPhone: hasReservation ? form.reservationPhone.trim() : "", hospitalUrl: hasReservation ? form.hospitalUrl.trim() : "", reservationNote: hasReservation ? form.reservationNote.trim() : "", appointmentDateTime: isBooked ? form.appointmentDateTime : null, appointmentDateJst: isBooked && form.appointmentDateTime ? form.appointmentDateTime.slice(0, 10) : null, appointmentBelongings: isBooked ? form.appointmentBelongings.trim() : "", appointmentNote: isBooked ? form.appointmentNote.trim() : "", prescriptionImages, medicationGuideImages, diagnosisResultImages }; }
 function formatWeekday(date: string) { return date ? `（${new Intl.DateTimeFormat("ja-JP", { weekday: "short" }).format(new Date(`${date}T00:00:00`))}）` : ""; }
 function formatDate(date: string) { return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(`${date}T00:00:00`)); }
 function formatDateTime(value: string) { return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }

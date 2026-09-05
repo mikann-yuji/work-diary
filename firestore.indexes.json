@@ -1,0 +1,32 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "medicalRecords",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "hasNextVisit", "order": "ASCENDING" },
+        { "fieldPath": "reservationStatus", "order": "ASCENDING" },
+        { "fieldPath": "reservationDeadline", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "medicalRecords",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "hasNextVisit", "order": "ASCENDING" },
+        { "fieldPath": "reservationStatus", "order": "ASCENDING" },
+        { "fieldPath": "appointmentDateJst", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "medicalRecords",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "hasNextVisit", "order": "ASCENDING" },
+        { "fieldPath": "reservationStatus", "order": "ASCENDING" },
+        { "fieldPath": "appointmentDateTime", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

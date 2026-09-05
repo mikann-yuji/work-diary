@@ -28,10 +28,16 @@ service cloud.firestore {
           if request.auth != null
           && request.auth.uid == userId
           && request.resource.data.medicalRecordId == recordId
+          && request.resource.data.uid == userId
           && request.resource.data.visitDate is string
           && request.resource.data.department is string
           && request.resource.data.schemaVersion is int;
       }
+    }
+
+    // Cloud Functions (Admin SDK) only. Clients cannot forge notification state.
+    match /notificationDeliveries/{deliveryId} {
+      allow read, write: if false;
     }
 
     match /{document=**} {

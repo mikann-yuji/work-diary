@@ -78,8 +78,12 @@ export function MonthlyCalendar({
     medicalRecords.forEach((record) => {
       add(record.visitDate, { type: "visit", record });
       if (record.hasNextVisit) add(record.reservationDeadline, { type: "deadline", record });
-      if (record.hasNextVisit && record.reservationStatus === "booked") add(record.appointmentDateTime?.slice(0, 10) ?? null, { type: "appointment", record });
+      if (record.hasNextVisit && record.reservationStatus === "booked") add(record.appointmentDateJst ?? record.appointmentDateTime?.slice(0, 10) ?? null, { type: "appointment", record });
     });
+    map.forEach((events) => events.sort((a, b) => {
+      if (a.type === "appointment" && b.type === "appointment") return (a.record.appointmentDateTime ?? "").localeCompare(b.record.appointmentDateTime ?? "");
+      return 0;
+    }));
     return map;
   }, [medicalRecords]);
   const selectedRecord = selectedDate ? recordsByDate.get(selectedDate) ?? null : null;
@@ -390,9 +394,20 @@ function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onO
       ) : (
         <div className="mt-3"><p className="text-sm text-slate-500">この日の記録はありません</p><button type="button" onClick={onCreate} className="mt-4 min-h-12 w-full rounded-xl bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800">この日を記録する</button></div>
       )}
-      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <button key={`${event.type}-${event.record.id}-${index}`} type="button" onClick={() => onOpenMedical(event.record.id)} className="flex min-h-11 w-full items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 text-left"><span className="text-sm font-bold text-teal-800">{medicalEventLabels[event.type]}</span><span className="min-w-0 truncate text-sm text-slate-600">{event.record.department}{event.record.hospitalName ? `・${event.record.hospitalName}` : ""}</span></button>)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}</div>
+      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <MedicalEventCard key={`${event.type}-${event.record.id}-${index}`} event={event} onOpen={() => onOpenMedical(event.record.id)} />)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}</div>
     </section>
   );
+}
+
+function MedicalEventCard({ event, onOpen }: { event: MedicalEvent; onOpen: () => void }) {
+  const { record } = event;
+  const showReservationContact = event.type === "deadline" || event.type === "appointment";
+  return <article className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+    <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="font-bold text-teal-800">{medicalEventLabels[event.type]}</p><p className="mt-1 break-words">{record.hospitalName || "病院名未入力"}・{record.department}</p></div><button type="button" onClick={onOpen} className="min-h-11 shrink-0 rounded-lg border border-teal-200 bg-white px-3 font-bold text-teal-800">編集</button></div>
+    {event.type === "deadline" ? <dl className="mt-2 space-y-1 text-xs"><div><dt className="inline text-slate-500">予約期限：</dt><dd className="inline">{record.reservationDeadline}</dd></div><div><dt className="inline text-slate-500">予約状況：</dt><dd className="inline">{record.reservationStatus === "booked" ? "予約済み" : "未予約"}</dd></div>{record.reservationNote ? <div><dt className="block text-slate-500">予約期限の備考</dt><dd className="whitespace-pre-wrap">{record.reservationNote}</dd></div> : null}</dl> : null}
+    {event.type === "appointment" ? <dl className="mt-2 space-y-1 text-xs"><div><dt className="inline text-slate-500">予約日時：</dt><dd className="inline">{record.appointmentDateTime ? formatMedicalAppointmentDateTime(record.appointmentDateTime) : ""}</dd></div>{record.appointmentBelongings ? <div><dt className="block text-slate-500">持ち物</dt><dd className="whitespace-pre-wrap">{record.appointmentBelongings}</dd></div> : null}{record.appointmentNote ? <div><dt className="block text-slate-500">予約日の備考</dt><dd className="whitespace-pre-wrap">{record.appointmentNote}</dd></div> : null}</dl> : null}
+    {showReservationContact && (record.reservationPhone || isSafeExternalUrl(record.hospitalUrl)) ? <div className="mt-3 flex flex-wrap gap-2">{record.reservationPhone ? <a href={`tel:${record.reservationPhone}`} className="inline-flex min-h-11 items-center rounded-lg bg-white px-3 font-bold text-teal-800 underline">{record.reservationPhone}</a> : null}{isSafeExternalUrl(record.hospitalUrl) ? <a href={record.hospitalUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-lg bg-white px-3 font-bold text-teal-800 underline">病院のページ</a> : null}</div> : null}
+  </article>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -410,6 +425,16 @@ function formatAccessibleDate(date: string) {
 
 function formatDisplayDate(date: string) {
   return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(`${date}T00:00:00`));
+}
+
+function formatMedicalAppointmentDateTime(value: string) {
+  return new Intl.DateTimeFormat("ja-JP", {
+    month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function isSafeExternalUrl(value: string) {
+  try { const url = new URL(value); return url.protocol === "http:" || url.protocol === "https:"; } catch { return false; }
 }
 
 function formatSummaryDuration(minutes: number) {

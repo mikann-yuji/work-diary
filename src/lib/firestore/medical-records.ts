@@ -26,10 +26,11 @@ export async function saveMedicalRecord(uid: string, recordId: string, input: Me
     const snapshot = await transaction.get(reference);
     transaction.set(reference, {
       ...input,
+      uid,
       medicalRecordId: recordId,
       createdAt: snapshot.exists() ? snapshot.data().createdAt ?? serverTimestamp() : serverTimestamp(),
       updatedAt: serverTimestamp(),
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
     return { created: !snapshot.exists() };
   });
@@ -46,13 +47,14 @@ export function subscribeMedicalRecords(
 ): Unsubscribe {
   const recordsQuery = query(collection(firestore, "users", uid, "medicalRecords"), orderBy("visitDate", "desc"));
   return onSnapshot(recordsQuery, (snapshot) => {
-    onRecords(snapshot.docs.map((item) => fromDocument(item.id, item.data())));
+    onRecords(snapshot.docs.map((item) => fromDocument(uid, item.id, item.data())));
   }, onError);
 }
 
-function fromDocument(id: string, data: DocumentData): StoredMedicalRecord {
+function fromDocument(uid: string, id: string, data: DocumentData): StoredMedicalRecord {
   return {
     id,
+    uid: typeof data.uid === "string" ? data.uid : uid,
     medicalRecordId: typeof data.medicalRecordId === "string" ? data.medicalRecordId : id,
     visitDate: typeof data.visitDate === "string" ? data.visitDate : "",
     department: typeof data.department === "string" ? data.department : "",
@@ -60,7 +62,13 @@ function fromDocument(id: string, data: DocumentData): StoredMedicalRecord {
     hasNextVisit: typeof data.hasNextVisit === "boolean" ? data.hasNextVisit : null,
     reservationDeadline: typeof data.reservationDeadline === "string" ? data.reservationDeadline : null,
     reservationStatus: data.reservationStatus === "unbooked" || data.reservationStatus === "booked" ? data.reservationStatus : null,
+    reservationPhone: typeof data.reservationPhone === "string" ? data.reservationPhone : "",
+    hospitalUrl: typeof data.hospitalUrl === "string" ? data.hospitalUrl : "",
+    reservationNote: typeof data.reservationNote === "string" ? data.reservationNote : "",
     appointmentDateTime: typeof data.appointmentDateTime === "string" ? data.appointmentDateTime : null,
+    appointmentDateJst: typeof data.appointmentDateJst === "string" ? data.appointmentDateJst : (typeof data.appointmentDateTime === "string" ? data.appointmentDateTime.slice(0, 10) : null),
+    appointmentBelongings: typeof data.appointmentBelongings === "string" ? data.appointmentBelongings : "",
+    appointmentNote: typeof data.appointmentNote === "string" ? data.appointmentNote : "",
     visitMethod: data.visitMethod === "initial" || data.visitMethod === "followUp" || data.visitMethod === "online" ? data.visitMethod : null,
     background: typeof data.background === "string" ? data.background : "",
     symptomDuration: typeof data.symptomDuration === "string" ? data.symptomDuration : "",

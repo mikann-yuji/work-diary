@@ -17,7 +17,13 @@ export type MedicalRecordInput = {
   hasNextVisit: boolean | null;
   reservationDeadline: string | null;
   reservationStatus: ReservationStatus;
+  reservationPhone: string;
+  hospitalUrl: string;
+  reservationNote: string;
   appointmentDateTime: string | null;
+  appointmentDateJst: string | null;
+  appointmentBelongings: string;
+  appointmentNote: string;
   visitMethod: VisitMethod | null;
   background: string;
   symptomDuration: string;
@@ -31,6 +37,7 @@ export type MedicalRecordInput = {
 
 export type StoredMedicalRecord = MedicalRecordInput & {
   id: string;
+  uid: string;
   medicalRecordId: string;
   createdAt: Timestamp | null;
   updatedAt: Timestamp | null;
