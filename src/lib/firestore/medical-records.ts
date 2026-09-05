@@ -29,7 +29,7 @@ export async function saveMedicalRecord(uid: string, recordId: string, input: Me
       medicalRecordId: recordId,
       createdAt: snapshot.exists() ? snapshot.data().createdAt ?? serverTimestamp() : serverTimestamp(),
       updatedAt: serverTimestamp(),
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
     return { created: !snapshot.exists() };
   });
@@ -69,6 +69,7 @@ function fromDocument(id: string, data: DocumentData): StoredMedicalRecord {
     memo: typeof data.memo === "string" ? data.memo : "",
     prescriptionImages: normalizeImages(data.prescriptionImages),
     medicationGuideImages: normalizeImages(data.medicationGuideImages),
+    diagnosisResultImages: normalizeImages(data.diagnosisResultImages),
     createdAt: data.createdAt ?? null,
     updatedAt: data.updatedAt ?? null,
     schemaVersion: typeof data.schemaVersion === "number" ? data.schemaVersion : 1,

@@ -17,10 +17,10 @@ import { deleteDraft, deleteDraftImage, getDraft, getDraftImages, listNewMedical
 import { useDraftAutosave, type DraftSaveState } from "@/hooks/use-draft-autosave";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
-type FormState = Omit<MedicalRecordInput, "prescriptionImages" | "medicationGuideImages">;
+type FormState = Omit<MedicalRecordInput, "prescriptionImages" | "medicationGuideImages" | "diagnosisResultImages">;
 type PendingImage = { id: string; blob: Blob; url: string };
 type Errors = Partial<Record<"visitDate" | "department" | "visitMethod" | "reservationDeadline" | "reservationStatus" | "appointmentDateTime", string>>;
-type MedicalDraftPayload = { form: FormState; existingPrescription: MedicalImageReference[]; existingGuides: MedicalImageReference[]; removedPaths: string[]; pendingIds: Record<MedicalImageKind, string[]> };
+type MedicalDraftPayload = { form: FormState; existingPrescription: MedicalImageReference[]; existingGuides: MedicalImageReference[]; existingDiagnosisResults: MedicalImageReference[]; removedPaths: string[]; pendingIds: Record<MedicalImageKind, string[]> };
 
 const visitMethods: Array<{ id: VisitMethod; label: string }> = [{ id: "initial", label: "初診" }, { id: "followUp", label: "再診" }, { id: "online", label: "オンライン" }];
 const reservationOptions: Array<{ id: Exclude<ReservationStatus, null>; label: string }> = [{ id: "unbooked", label: "未予約" }, { id: "booked", label: "予約済み" }];
@@ -31,8 +31,10 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   const [editingId, setEditingId] = useState<string | null>(null);
   const [existingPrescription, setExistingPrescription] = useState<MedicalImageReference[]>([]);
   const [existingGuides, setExistingGuides] = useState<MedicalImageReference[]>([]);
+  const [existingDiagnosisResults, setExistingDiagnosisResults] = useState<MedicalImageReference[]>([]);
   const [pendingPrescription, setPendingPrescription] = useState<PendingImage[]>([]);
   const [pendingGuides, setPendingGuides] = useState<PendingImage[]>([]);
+  const [pendingDiagnosisResults, setPendingDiagnosisResults] = useState<PendingImage[]>([]);
   const [removedPaths, setRemovedPaths] = useState<string[]>([]);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
@@ -44,9 +46,9 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   const formRef = useRef<HTMLFormElement>(null);
   const savingRef = useRef(false);
   const pendingRef = useRef<PendingImage[]>([]);
-  pendingRef.current = [...pendingPrescription, ...pendingGuides];
+  pendingRef.current = [...pendingPrescription, ...pendingGuides, ...pendingDiagnosisResults];
   const activeDraftKey = editingId ? `medical-record:${uid}:edit:${editingId}` : `medical-record:${uid}:new:${draftId}`;
-  const draftPayload = useMemo<MedicalDraftPayload>(() => ({ form, existingPrescription, existingGuides, removedPaths, pendingIds: { prescriptions: pendingPrescription.map((image) => image.id), "medication-guides": pendingGuides.map((image) => image.id) } }), [form, existingPrescription, existingGuides, removedPaths, pendingPrescription, pendingGuides]);
+  const draftPayload = useMemo<MedicalDraftPayload>(() => ({ form, existingPrescription, existingGuides, existingDiagnosisResults, removedPaths, pendingIds: { prescriptions: pendingPrescription.map((image) => image.id), "medication-guides": pendingGuides.map((image) => image.id), "diagnosis-results": pendingDiagnosisResults.map((image) => image.id) } }), [form, existingPrescription, existingGuides, existingDiagnosisResults, removedPaths, pendingPrescription, pendingGuides, pendingDiagnosisResults]);
   const medicalDraft = useMemo<DraftEntry<MedicalDraftPayload>>(() => ({ key: activeDraftKey, uid, kind: "medical-record", mode: editingId ? "edit" : "new", targetId: editingId ?? draftId, payload: draftPayload, updatedAt: 0 }), [activeDraftKey, uid, editingId, draftId, draftPayload]);
   const draftAutosave = useDraftAutosave({ draft: medicalDraft, enabled: draftReady && !saving && !preparingImages });
 
@@ -87,10 +89,12 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   function resetForm() {
     replacePending(setPendingPrescription, []);
     replacePending(setPendingGuides, []);
+    replacePending(setPendingDiagnosisResults, []);
     setForm(createInitialForm());
     setEditingId(null);
     setExistingPrescription([]);
     setExistingGuides([]);
+    setExistingDiagnosisResults([]);
     setRemovedPaths([]);
     setErrors({});
     setDraftId(crypto.randomUUID());
@@ -121,12 +125,15 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   function applyPayload(payload: MedicalDraftPayload, pending: PendingImage[] = []) {
     replacePending(setPendingPrescription, []);
     replacePending(setPendingGuides, []);
+    replacePending(setPendingDiagnosisResults, []);
     setForm(payload.form);
     setExistingPrescription(payload.existingPrescription);
     setExistingGuides(payload.existingGuides);
+    setExistingDiagnosisResults(payload.existingDiagnosisResults ?? []);
     setRemovedPaths(payload.removedPaths);
     setPendingPrescription(pending.filter((image) => payload.pendingIds.prescriptions.includes(image.id)));
     setPendingGuides(pending.filter((image) => payload.pendingIds["medication-guides"].includes(image.id)));
+    setPendingDiagnosisResults(pending.filter((image) => (payload.pendingIds["diagnosis-results"] ?? []).includes(image.id)));
     setErrors({});
   }
 
@@ -150,9 +157,9 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
 
   async function selectImages(files: FileList | null, kind: MedicalImageKind) {
     if (!files?.length || preparingImages) return;
-    const existing = kind === "prescriptions" ? existingPrescription : existingGuides;
-    const pending = kind === "prescriptions" ? pendingPrescription : pendingGuides;
-    const setter = kind === "prescriptions" ? setPendingPrescription : setPendingGuides;
+    const existing = { prescriptions: existingPrescription, "medication-guides": existingGuides, "diagnosis-results": existingDiagnosisResults }[kind];
+    const pending = { prescriptions: pendingPrescription, "medication-guides": pendingGuides, "diagnosis-results": pendingDiagnosisResults }[kind];
+    const setter = { prescriptions: setPendingPrescription, "medication-guides": setPendingGuides, "diagnosis-results": setPendingDiagnosisResults }[kind];
     const available = Math.max(0, 2 - existing.length - pending.length);
     const selected = [...files].slice(0, available);
     const prepared: PendingImage[] = [];
@@ -167,6 +174,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
       setter((current) => [...current, ...prepared]);
     } catch (error) {
       prepared.forEach((image) => URL.revokeObjectURL(image.url));
+      await Promise.all(prepared.map((image) => deleteDraftImage(activeDraftKey, image.id)));
       if (error instanceof UnsupportedMedicalImageError) onToast("画像を読み込めませんでした。JPEG、PNGなど対応している画像を選び直してください", "error");
       else onToast("画像を準備できませんでした", "error");
     } finally {
@@ -176,12 +184,13 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
 
   function removeExisting(image: MedicalImageReference, kind: MedicalImageKind) {
     if (kind === "prescriptions") setExistingPrescription((current) => current.filter((item) => item.id !== image.id));
-    else setExistingGuides((current) => current.filter((item) => item.id !== image.id));
+    else if (kind === "medication-guides") setExistingGuides((current) => current.filter((item) => item.id !== image.id));
+    else setExistingDiagnosisResults((current) => current.filter((item) => item.id !== image.id));
     setRemovedPaths((current) => [...current, image.path]);
   }
 
   function removePending(id: string, kind: MedicalImageKind) {
-    const setter = kind === "prescriptions" ? setPendingPrescription : setPendingGuides;
+    const setter = { prescriptions: setPendingPrescription, "medication-guides": setPendingGuides, "diagnosis-results": setPendingDiagnosisResults }[kind];
     setter((current) => current.filter((item) => { if (item.id === id) URL.revokeObjectURL(item.url); return item.id !== id; }));
     void deleteDraftImage(activeDraftKey, id);
   }
@@ -201,24 +210,25 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     setSaving(true);
     const recordId = editingId ?? createMedicalRecordId(uid);
     const uploaded: MedicalImageReference[] = [];
-    const pendingGroups = [{ kind: "prescriptions" as const, images: pendingPrescription }, { kind: "medication-guides" as const, images: pendingGuides }];
-    const total = pendingPrescription.length + pendingGuides.length;
+    const pendingGroups = [{ kind: "prescriptions" as const, images: pendingPrescription }, { kind: "medication-guides" as const, images: pendingGuides }, { kind: "diagnosis-results" as const, images: pendingDiagnosisResults }];
+    const total = pendingPrescription.length + pendingGuides.length + pendingDiagnosisResults.length;
     let completed = 0;
     try {
-      const uploadedByKind: Record<MedicalImageKind, MedicalImageReference[]> = { prescriptions: [], "medication-guides": [] };
+      const uploadedByKind: Record<MedicalImageKind, MedicalImageReference[]> = { prescriptions: [], "medication-guides": [], "diagnosis-results": [] };
       for (const group of pendingGroups) for (const image of group.images) {
         const reference = await uploadMedicalImage(uid, recordId, group.kind, image.blob, (part) => setUploadProgress(total ? Math.round(((completed + part) / total) * 100) : null));
         uploaded.push(reference);
         uploadedByKind[group.kind].push(reference);
         completed += 1;
       }
-      const input = sanitizeForSave(form, [...existingPrescription, ...uploadedByKind.prescriptions], [...existingGuides, ...uploadedByKind["medication-guides"]]);
+      const input = sanitizeForSave(form, [...existingPrescription, ...uploadedByKind.prescriptions], [...existingGuides, ...uploadedByKind["medication-guides"]], [...existingDiagnosisResults, ...uploadedByKind["diagnosis-results"]]);
       const result = await saveMedicalRecord(uid, recordId, input);
       await Promise.all(removedPaths.map(deleteMedicalImage));
       replacePending(setPendingPrescription, []);
       replacePending(setPendingGuides, []);
       setExistingPrescription(input.prescriptionImages);
       setExistingGuides(input.medicationGuideImages);
+      setExistingDiagnosisResults(input.diagnosisResultImages);
       setRemovedPaths([]);
       setEditingId(recordId);
       await deleteDraft(activeDraftKey).catch(() => undefined);
@@ -238,7 +248,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     if (!editingId || savingRef.current || !window.confirm("この通院記録を削除しますか？")) return;
     savingRef.current = true;
     setSaving(true);
-    const imagePaths = [...existingPrescription, ...existingGuides].map((image) => image.path);
+    const imagePaths = [...existingPrescription, ...existingGuides, ...existingDiagnosisResults].map((image) => image.path);
     try {
       await deleteMedicalRecord(uid, editingId);
       await Promise.all([...imagePaths, ...removedPaths].map(deleteMedicalImage));
@@ -294,7 +304,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
         <ChoiceField legend="受診方法" required value={form.visitMethod} options={visitMethods} onSelect={(id) => update({ visitMethod: id as VisitMethod })} error={errors.visitMethod} />
       </div></SectionCard>
       <SectionCard title="詳細情報" description="わかる範囲で記録できます。"><div className="space-y-4"><TextArea label="通院の経緯" value={form.background} onChange={(background) => update({ background })} /><Field label="症状の長さ"><input value={form.symptomDuration} onChange={(e) => update({ symptomDuration: e.target.value })} placeholder="例：3日間、2週間程度" className="input" /></Field><TextArea label="診断" value={form.diagnosis} onChange={(diagnosis) => update({ diagnosis })} /><TextArea label="処方" value={form.prescription} onChange={(prescription) => update({ prescription })} /><TextArea label="メモ" value={form.memo} onChange={(memo) => update({ memo })} /></div></SectionCard>
-      <SectionCard title="画像" description="画像は端末内で縮小し、本人だけがアクセスできるStorageへ保存します。"><div className="space-y-5"><ImagePicker title="処方箋の画像" kind="prescriptions" existing={existingPrescription} pending={pendingPrescription} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /><ImagePicker title="薬の説明書の画像" kind="medication-guides" existing={existingGuides} pending={pendingGuides} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /></div>{preparingImages ? <p role="status" className="mt-3 text-sm font-bold text-teal-800">画像を準備しています…</p> : null}</SectionCard>
+      <SectionCard title="画像" description="画像は端末内で縮小し、本人だけがアクセスできるStorageへ保存します。"><div className="space-y-5"><ImagePicker title="処方箋の画像" kind="prescriptions" existing={existingPrescription} pending={pendingPrescription} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /><ImagePicker title="薬の説明書の画像" kind="medication-guides" existing={existingGuides} pending={pendingGuides} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /><ImagePicker title="診断結果の画像" kind="diagnosis-results" existing={existingDiagnosisResults} pending={pendingDiagnosisResults} disabled={saving || preparingImages} onSelect={selectImages} onRemoveExisting={removeExisting} onRemovePending={removePending} /></div>{preparingImages ? <p role="status" className="mt-3 text-sm font-bold text-teal-800">画像を準備しています…</p> : null}</SectionCard>
       {uploadProgress !== null ? <p className="text-center text-sm font-bold text-teal-800" aria-live="polite">画像をアップロードしています（{uploadProgress}%）</p> : null}
       <button type="submit" disabled={saving || preparingImages} className="flex min-h-14 w-full items-center justify-center gap-3 rounded-2xl bg-teal-700 px-5 text-base font-bold text-white shadow-lg shadow-teal-900/15 disabled:cursor-wait disabled:opacity-55">{saving ? <><span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-teal-200 border-t-white" />保存しています…</> : editingId ? "通院記録を更新" : "通院記録を保存"}</button>
       {draftAutosave.state !== "clean" ? <button type="button" onClick={() => void discardCurrentDraft()} disabled={saving || preparingImages} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 disabled:opacity-50">下書きを破棄</button> : null}
@@ -343,9 +353,9 @@ function TextArea({ label, value, onChange }: { label: string; value: string; on
 function ChoiceField<T extends string>({ legend, required, value, options, onSelect, error }: { legend: string; required?: boolean; value: T | null; options: Array<{ id: T; label: string }>; onSelect: (id: T) => void; error?: string }) { return <fieldset tabIndex={error ? -1 : undefined} aria-invalid={Boolean(error)}><legend className="label">{legend}{required ? <span className="ml-2 text-xs text-rose-600">必須</span> : <span className="ml-2 font-normal text-slate-400">（任意）</span>}</legend><div className={`grid gap-2 ${options.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>{options.map((option) => <button key={option.id} type="button" aria-pressed={value === option.id} onClick={() => onSelect(option.id)} className={`min-h-12 rounded-xl border font-bold ${value === option.id ? "border-teal-700 bg-teal-700 text-white" : "border-slate-200 bg-white text-slate-600"}`}>{option.label}</button>)}</div>{error ? <p className="mt-1 text-sm text-rose-700">{error}</p> : null}</fieldset>; }
 
 function createInitialForm(): FormState { return { visitDate: getLocalDateString(), department: "", hospitalName: "", hasNextVisit: null, reservationDeadline: null, reservationStatus: null, appointmentDateTime: null, visitMethod: null, background: "", symptomDuration: "", diagnosis: "", prescription: "", memo: "" }; }
-function payloadFromRecord(record: StoredMedicalRecord): MedicalDraftPayload { return { form: { visitDate: record.visitDate, department: record.department, hospitalName: record.hospitalName, hasNextVisit: record.hasNextVisit, reservationDeadline: record.reservationDeadline, reservationStatus: record.reservationStatus, appointmentDateTime: record.appointmentDateTime, visitMethod: record.visitMethod, background: record.background, symptomDuration: record.symptomDuration, diagnosis: record.diagnosis, prescription: record.prescription, memo: record.memo }, existingPrescription: record.prescriptionImages, existingGuides: record.medicationGuideImages, removedPaths: [], pendingIds: { prescriptions: [], "medication-guides": [] } }; }
+function payloadFromRecord(record: StoredMedicalRecord): MedicalDraftPayload { return { form: { visitDate: record.visitDate, department: record.department, hospitalName: record.hospitalName, hasNextVisit: record.hasNextVisit, reservationDeadline: record.reservationDeadline, reservationStatus: record.reservationStatus, appointmentDateTime: record.appointmentDateTime, visitMethod: record.visitMethod, background: record.background, symptomDuration: record.symptomDuration, diagnosis: record.diagnosis, prescription: record.prescription, memo: record.memo }, existingPrescription: record.prescriptionImages, existingGuides: record.medicationGuideImages, existingDiagnosisResults: record.diagnosisResultImages, removedPaths: [], pendingIds: { prescriptions: [], "medication-guides": [], "diagnosis-results": [] } }; }
 function validate(form: FormState): Errors { const errors: Errors = {}; if (!form.visitDate) errors.visitDate = "通院した日付を入力してください"; if (!form.department.trim()) errors.department = "区分・診療科を入力してください"; if (!form.visitMethod) errors.visitMethod = "受診方法を選択してください"; if (form.hasNextVisit) { if (!form.reservationDeadline) errors.reservationDeadline = "予約する期限を入力してください"; if (!form.reservationStatus) errors.reservationStatus = "予約状況を選択してください"; if (form.reservationStatus === "booked" && !form.appointmentDateTime) errors.appointmentDateTime = "予約日時を入力してください"; } return errors; }
-function sanitizeForSave(form: FormState, prescriptionImages: MedicalImageReference[], medicationGuideImages: MedicalImageReference[]): MedicalRecordInput { return { ...form, department: form.department.trim(), hospitalName: form.hospitalName.trim(), reservationDeadline: form.hasNextVisit ? form.reservationDeadline : null, reservationStatus: form.hasNextVisit ? form.reservationStatus : null, appointmentDateTime: form.hasNextVisit && form.reservationStatus === "booked" ? form.appointmentDateTime : null, prescriptionImages, medicationGuideImages }; }
+function sanitizeForSave(form: FormState, prescriptionImages: MedicalImageReference[], medicationGuideImages: MedicalImageReference[], diagnosisResultImages: MedicalImageReference[]): MedicalRecordInput { return { ...form, department: form.department.trim(), hospitalName: form.hospitalName.trim(), reservationDeadline: form.hasNextVisit ? form.reservationDeadline : null, reservationStatus: form.hasNextVisit ? form.reservationStatus : null, appointmentDateTime: form.hasNextVisit && form.reservationStatus === "booked" ? form.appointmentDateTime : null, prescriptionImages, medicationGuideImages, diagnosisResultImages }; }
 function formatWeekday(date: string) { return date ? `（${new Intl.DateTimeFormat("ja-JP", { weekday: "short" }).format(new Date(`${date}T00:00:00`))}）` : ""; }
 function formatDate(date: string) { return new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short" }).format(new Date(`${date}T00:00:00`)); }
 function formatDateTime(value: string) { return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }

@@ -17,7 +17,7 @@ export type DraftImageEntry = {
   uid: string;
   draftKey: string;
   imageId: string;
-  kind: "prescriptions" | "medication-guides";
+  kind: "prescriptions" | "medication-guides" | "diagnosis-results";
   blob: Blob;
 };
 

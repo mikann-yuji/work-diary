@@ -2,7 +2,7 @@ import type { Timestamp } from "firebase/firestore";
 
 export type VisitMethod = "initial" | "followUp" | "online";
 export type ReservationStatus = "unbooked" | "booked" | null;
-export type MedicalImageKind = "prescriptions" | "medication-guides";
+export type MedicalImageKind = "prescriptions" | "medication-guides" | "diagnosis-results";
 
 export type MedicalImageReference = {
   id: string;
@@ -26,6 +26,7 @@ export type MedicalRecordInput = {
   memo: string;
   prescriptionImages: MedicalImageReference[];
   medicationGuideImages: MedicalImageReference[];
+  diagnosisResultImages: MedicalImageReference[];
 };
 
 export type StoredMedicalRecord = MedicalRecordInput & {
