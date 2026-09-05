@@ -334,7 +334,7 @@ export function WorkDiary({ tab, onTabChange }: { tab: DiaryTab; onTabChange: (t
                   </div>
                 </fieldset>
 
-                <TimePair legend="本来の勤務時間" start={form.scheduledStart} end={form.scheduledEnd} onStart={changeScheduledStart} onEnd={changeScheduledEnd} requiredStart requiredEnd />
+                <TimePair legend="本来の勤務時間" start={form.scheduledStart} end={form.scheduledEnd} onStart={changeScheduledStart} onEnd={changeScheduledEnd} disabled={form.type === "holiday" || form.type === "plannedHoliday"} requiredStart requiredEnd />
                 <TimePair legend="実際の勤務時間" start={form.actualStart} end={form.actualEnd} onStart={(actualStart) => updateForm({ actualStart })} onEnd={(actualEnd) => updateForm({ actualEnd })} disabled={form.type === "absent" || form.type === "holiday" || form.type === "plannedHoliday"} requiredStart={form.type === "present" || form.type === "late"} requiredEnd={form.type === "present" || form.type === "early"} />
 
                 <div className="rounded-2xl border border-teal-100 bg-teal-50 px-4 py-4" aria-live="polite">

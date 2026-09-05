@@ -381,7 +381,7 @@ function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onO
           <dl className="grid grid-cols-2 gap-2 text-sm">
             <Detail label="勤務区分" value={attendanceLabels[record.type]} />
             <Detail label="失った時間" value={formatDuration(record.lostMinutes)} />
-            <Detail label="本来の勤務時間" value={`${record.scheduledStart}〜${record.scheduledEnd}`} />
+            <Detail label="本来の勤務時間" value={record.type === "holiday" || record.type === "plannedHoliday" ? "勤務なし" : `${record.scheduledStart}〜${record.scheduledEnd}`} />
             <Detail label="実際の勤務時間" value={record.type === "absent" || record.type === "holiday" || record.type === "plannedHoliday" ? "勤務なし" : `${record.actualStart}〜${record.actualEnd}`} />
           </dl>
           <div><p className="text-xs text-slate-500">主な原因</p><p className="mt-1 text-sm leading-6 text-slate-700">{causes.length > 0 ? causes.slice(0, 4).join("、") : "原因の記録なし"}</p></div>
