@@ -16,6 +16,7 @@ import type { StoredWorkRecord } from "@/lib/firestore/records";
 import type { StoredMedicalRecord } from "@/types/medical-record";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
+import { MedicalRecordExportDialog } from "@/components/medical-record-export-dialog";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type MedicalEvent = { type: "visit" | "deadline" | "appointment"; record: StoredMedicalRecord };
@@ -39,6 +40,7 @@ const attendanceStyles: Record<AttendanceType, string> = {
 };
 
 export function MonthlyCalendar({
+  uid,
   recordsByDate,
   medicalRecords,
   recordsState,
@@ -47,6 +49,7 @@ export function MonthlyCalendar({
   onOpenMedical,
   onToast,
 }: {
+  uid: string;
   recordsByDate: ReadonlyMap<string, StoredWorkRecord>;
   medicalRecords: StoredMedicalRecord[];
   recordsState: RecordsState;
@@ -63,6 +66,8 @@ export function MonthlyCalendar({
   const [generating, setGenerating] = useState<"pdf" | "image" | null>(null);
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const [previewImages, setPreviewImages] = useState<PreviewRecordImage[] | null>(null);
+  const [selectedMedicalExportIds, setSelectedMedicalExportIds] = useState<Set<string>>(() => new Set());
+  const [medicalExportRecords, setMedicalExportRecords] = useState<StoredMedicalRecord[] | null>(null);
   const today = useMemo(() => getLocalDateString(), []);
   const calendarDays = useMemo(() => createCalendarDays(visibleMonth), [visibleMonth]);
   const summary = useMemo(
@@ -109,6 +114,7 @@ export function MonthlyCalendar({
     }
     setVisibleMonth((current) => shiftMonth(current, amount));
     setSelectedDate(null);
+    setSelectedMedicalExportIds(new Set());
   }
 
   function toggleExportDate(date: string) {
@@ -268,11 +274,20 @@ export function MonthlyCalendar({
               onEdit={() => selectedRecord && onEdit(selectedRecord)}
               onCreate={() => onCreate(selectedDate)}
               onOpenMedical={onOpenMedical}
+              selectedMedicalExportIds={selectedMedicalExportIds}
+              onToggleMedicalExport={(id) => setSelectedMedicalExportIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
+              onClearMedicalExport={() => setSelectedMedicalExportIds(new Set())}
+              onExportMedical={() => {
+                const selected = medicalRecords.filter((item) => selectedMedicalExportIds.has(item.id));
+                if (selected.length) setMedicalExportRecords(selected);
+                else onToast("出力する通院記録を選択してください", "error");
+              }}
             />
           ) : null}
         </div>
       )}
       {previewImages ? <ImagePreviewDialog images={previewImages} onClose={closeImagePreview} onToast={onToast} /> : null}
+      {medicalExportRecords ? <MedicalRecordExportDialog uid={uid} records={medicalExportRecords} onClose={() => setMedicalExportRecords(null)} onToast={onToast} /> : null}
     </div>
   );
 }
@@ -375,8 +390,9 @@ function MedicalCalendarLegend() {
   return <ul aria-label="通院予定の凡例" className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-600">{(Object.keys(medicalEventLabels) as Array<keyof typeof medicalEventLabels>).map((type) => <li key={type} className="flex items-center gap-1.5"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${medicalEventStyles[type]}`} />{medicalEventLabels[type]}</li>)}</ul>;
 }
 
-function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onOpenMedical }: { date: string; record: StoredWorkRecord | null; medicalEvents: MedicalEvent[]; onEdit: () => void; onCreate: () => void; onOpenMedical: (recordId: string) => void }) {
+function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onOpenMedical, selectedMedicalExportIds, onToggleMedicalExport, onClearMedicalExport, onExportMedical }: { date: string; record: StoredWorkRecord | null; medicalEvents: MedicalEvent[]; onEdit: () => void; onCreate: () => void; onOpenMedical: (recordId: string) => void; selectedMedicalExportIds: Set<string>; onToggleMedicalExport: (id: string) => void; onClearMedicalExport: () => void; onExportMedical: () => void }) {
   const causes = record ? getCauseDisplayLabels(record.causes) : [];
+  const visitRecords = [...new Map(medicalEvents.filter((event) => event.type === "visit").map((event) => [event.record.id, event.record])).values()];
   return (
     <section className="rounded-[22px] border border-slate-100 bg-white p-4 shadow-sm shadow-slate-200/40">
       <h2 className="text-base font-bold text-slate-800">{formatDisplayDate(date)}</h2>
@@ -394,7 +410,7 @@ function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onO
       ) : (
         <div className="mt-3"><p className="text-sm text-slate-500">この日の記録はありません</p><button type="button" onClick={onCreate} className="mt-4 min-h-12 w-full rounded-xl bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800">この日を記録する</button></div>
       )}
-      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <MedicalEventCard key={`${event.type}-${event.record.id}-${index}`} event={event} onOpen={() => onOpenMedical(event.record.id)} />)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}</div>
+      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <MedicalEventCard key={`${event.type}-${event.record.id}-${index}`} event={event} onOpen={() => onOpenMedical(event.record.id)} />)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}{visitRecords.length ? <fieldset className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><legend className="px-1 text-sm font-bold text-cyan-950">通院記録を出力</legend><div className="space-y-2">{visitRecords.map((medical) => <label key={medical.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-white p-2 text-sm"><input type="checkbox" checked={selectedMedicalExportIds.has(medical.id)} onChange={() => onToggleMedicalExport(medical.id)} className="h-5 w-5 accent-cyan-700" /><span className="min-w-0"><span className="block font-bold text-slate-700">{medical.hospitalName || "病院名未入力"}・{medical.department}</span><span className="block text-xs text-slate-500">{visitMethodLabel(medical.visitMethod)}{medical.appointmentDateTime ? `・予約 ${formatMedicalAppointmentDateTime(medical.appointmentDateTime)}` : ""}</span></span></label>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-teal-700 px-2 text-xs font-bold text-white disabled:opacity-40">PDFとして保存</button><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-cyan-700 px-2 text-xs font-bold text-white disabled:opacity-40">画像として保存</button><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-slate-700 px-2 text-xs font-bold text-white disabled:opacity-40">印刷</button><button type="button" onClick={onClearMedicalExport} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl border border-cyan-200 bg-white px-2 text-xs font-bold text-cyan-900 disabled:opacity-40">選択を解除</button></div><p className="mt-2 text-xs text-cyan-900">出力前にA4プレビューを表示します。</p></fieldset> : null}</div>
     </section>
   );
 }
@@ -431,6 +447,13 @@ function formatMedicalAppointmentDateTime(value: string) {
   return new Intl.DateTimeFormat("ja-JP", {
     month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit",
   }).format(new Date(value));
+}
+
+function visitMethodLabel(value: StoredMedicalRecord["visitMethod"]) {
+  if (value === "initial") return "初診";
+  if (value === "followUp") return "再診";
+  if (value === "online") return "オンライン";
+  return "未入力";
 }
 
 function isSafeExternalUrl(value: string) {

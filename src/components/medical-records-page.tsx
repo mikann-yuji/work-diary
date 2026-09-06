@@ -16,6 +16,7 @@ import type { MedicalImageKind, MedicalImageReference, MedicalRecordInput, Reser
 import { deleteDraft, deleteDraftImage, getDraft, getDraftImages, listNewMedicalDrafts, putDraftImage, type DraftEntry } from "@/lib/drafts/indexed-db";
 import { useDraftAutosave, type DraftSaveState } from "@/hooks/use-draft-autosave";
 import { sendMedicalNotificationTest } from "@/lib/firebase/notification-test";
+import { MedicalRecordExportDialog } from "@/components/medical-record-export-dialog";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type FormState = Omit<MedicalRecordInput, "prescriptionImages" | "medicationGuideImages" | "diagnosisResultImages">;
@@ -42,6 +43,9 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
   const [preparingImages, setPreparingImages] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [sendingTestMail, setSendingTestMail] = useState(false);
+  const [exportSelectionMode, setExportSelectionMode] = useState(false);
+  const [selectedExportIds, setSelectedExportIds] = useState<Set<string>>(() => new Set());
+  const [exportRecords, setExportRecords] = useState<StoredMedicalRecord[] | null>(null);
   const [draftId, setDraftId] = useState(() => crypto.randomUUID());
   const [draftReady, setDraftReady] = useState(false);
   const [newDraftChoices, setNewDraftChoices] = useState<DraftEntry<MedicalDraftPayload>[]>([]);
@@ -331,7 +335,7 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
     <form ref={formRef} onSubmit={submit} noValidate className="relative space-y-5" aria-busy={saving || !draftReady}>
       {!draftReady ? <div className="absolute inset-0 z-20 flex items-start justify-center bg-white/75 pt-32"><span role="status" aria-label="読み込み中" className="h-8 w-8 animate-spin rounded-full border-4 border-teal-100 border-t-teal-700" /></div> : null}
       <fieldset disabled={!draftReady || saving} className="contents">
-      <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-bold text-slate-800">通院記録</h1><p className="mt-1 text-sm text-slate-500">{editingId ? "保存済みの記録を編集中" : "新しい通院記録"}</p></div>{editingId ? <button type="button" onClick={resetForm} disabled={saving} className="min-h-11 rounded-xl border border-teal-200 bg-white px-3 text-sm font-bold text-teal-800">新規作成</button> : null}</div>
+      <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-bold text-slate-800">通院記録</h1><p className="mt-1 text-sm text-slate-500">{editingId ? "保存済みの記録を編集中" : "新しい通院記録"}</p></div><div className="flex flex-wrap justify-end gap-2">{editingId ? <button type="button" onClick={() => { const record = records.find((item) => item.id === editingId); if (record) setExportRecords([record]); }} disabled={saving} className="min-h-11 rounded-xl border border-cyan-200 bg-white px-3 text-sm font-bold text-cyan-800">この記録を出力</button> : null}{editingId ? <button type="button" onClick={resetForm} disabled={saving} className="min-h-11 rounded-xl border border-teal-200 bg-white px-3 text-sm font-bold text-teal-800">新規作成</button> : null}</div></div>
       <SectionCard title="基本情報" description="必須項目には「必須」と表示しています。"><div className="space-y-4">
         <Field label="通院した日付" required error={errors.visitDate}><div className="input flex items-center gap-2"><input aria-invalid={Boolean(errors.visitDate)} type="date" value={form.visitDate} onChange={(e) => update({ visitDate: e.target.value })} className="min-w-0 flex-1 bg-transparent outline-none" /><span className="shrink-0 text-sm font-bold text-teal-800">{weekday}</span></div></Field>
         <Field label="区分・診療科" required error={errors.department}><input aria-invalid={Boolean(errors.department)} value={form.department} onChange={(e) => update({ department: e.target.value })} placeholder="例：精神科、内科" className="input" /></Field>
@@ -361,7 +365,18 @@ export function MedicalRecordsPage({ uid, records, state, requestedRecordId, onR
       </fieldset>
     </form>
     <details className="rounded-2xl border border-slate-100 bg-white p-4 text-sm text-slate-600"><summary className="cursor-pointer font-bold text-slate-700">通知メールの動作確認</summary><p className="mt-3 leading-6">ログイン中のGoogleアカウントへ、医療情報を含まないテストメールを送ります。</p><button type="button" onClick={() => void sendTestMail()} disabled={sendingTestMail} className="mt-3 min-h-11 w-full rounded-xl border border-teal-200 bg-white px-4 font-bold text-teal-800 disabled:opacity-50">{sendingTestMail ? "送信しています…" : "自分にテストメールを送る"}</button></details>
-    <MedicalRecordList records={records} state={state} onEdit={loadRecord} />
+    <MedicalRecordList
+      records={records}
+      state={state}
+      selectionMode={exportSelectionMode}
+      selectedIds={selectedExportIds}
+      onEdit={loadRecord}
+      onToggleSelectionMode={() => { setExportSelectionMode((current) => !current); setSelectedExportIds(new Set()); }}
+      onToggle={(id) => setSelectedExportIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
+      onClear={() => setSelectedExportIds(new Set())}
+      onExport={() => { const selected = records.filter((record) => selectedExportIds.has(record.id)); if (selected.length) setExportRecords(selected); else onToast("出力する通院記録を選択してください", "error"); }}
+    />
+    {exportRecords ? <MedicalRecordExportDialog uid={uid} records={exportRecords} onClose={() => setExportRecords(null)} onToast={onToast} /> : null}
   </div>;
 }
 
@@ -389,8 +404,12 @@ function ImageLightbox({ url, alt, onClose }: { url: string; alt: string; onClos
   return <div role="dialog" aria-modal="true" aria-label={`${alt}の拡大表示`} className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/85 p-4"><button ref={closeRef} type="button" onClick={onClose} aria-label="拡大画像を閉じる" className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10 h-11 w-11 rounded-full bg-white text-xl text-slate-800">×</button><div className="relative h-full w-full"><Image src={url} alt={alt} fill unoptimized className="object-contain" /></div></div>;
 }
 
-function MedicalRecordList({ records, state, onEdit }: { records: StoredMedicalRecord[]; state: RecordsState; onEdit: (record: StoredMedicalRecord) => void }) {
-  return <section className="rounded-[22px] border border-slate-100 bg-white p-4"><h2 className="text-lg font-bold text-slate-800">保存済みの通院記録</h2>{state === "loading" ? <p className="mt-4 text-sm text-slate-500">読み込み中…</p> : null}{state === "error" ? <p role="alert" className="mt-4 text-sm text-rose-700">通院記録を読み込めませんでした</p> : null}{state === "empty" ? <p className="mt-4 text-sm text-slate-500">通院記録はまだありません</p> : null}<div className="mt-3 space-y-2">{records.map((record) => <button key={record.id} type="button" onClick={() => onEdit(record)} className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-3 text-left"><span className="text-sm font-bold text-slate-800">{formatDate(record.visitDate)}</span><span className="mt-1 block text-sm font-semibold text-teal-800">{record.department}</span><span className="mt-1 block truncate text-xs text-slate-500">{record.hospitalName || "病院名未入力"}</span><span className="mt-2 block text-xs text-slate-500">次回通院：{record.hasNextVisit === null ? "未入力" : record.hasNextVisit ? "有" : "無"}{record.appointmentDateTime ? `　予約：${formatDateTime(record.appointmentDateTime)}` : ""}</span></button>)}</div></section>;
+function MedicalRecordList({ records, state, selectionMode, selectedIds, onEdit, onToggleSelectionMode, onToggle, onClear, onExport }: { records: StoredMedicalRecord[]; state: RecordsState; selectionMode: boolean; selectedIds: Set<string>; onEdit: (record: StoredMedicalRecord) => void; onToggleSelectionMode: () => void; onToggle: (id: string) => void; onClear: () => void; onExport: () => void }) {
+  return <section className="rounded-[22px] border border-slate-100 bg-white p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold text-slate-800">保存済みの通院記録</h2>{records.length ? <button type="button" aria-pressed={selectionMode} onClick={onToggleSelectionMode} className="min-h-11 rounded-xl border border-cyan-200 bg-white px-3 text-sm font-bold text-cyan-800">{selectionMode ? "選択を終了" : "複数件を出力"}</button> : null}</div>{state === "loading" ? <p className="mt-4 text-sm text-slate-500">読み込み中…</p> : null}{state === "error" ? <p role="alert" className="mt-4 text-sm text-rose-700">通院記録を読み込めませんでした</p> : null}{state === "empty" ? <p className="mt-4 text-sm text-slate-500">通院記録はまだありません</p> : null}{selectionMode ? <div className="mt-3 rounded-2xl border border-cyan-100 bg-cyan-50 p-3"><p className="text-sm font-bold text-cyan-950">{selectedIds.size}件選択中</p><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={onExport} disabled={!selectedIds.size} className="min-h-11 rounded-xl bg-teal-700 px-2 text-xs font-bold text-white disabled:opacity-40">PDFとして保存</button><button type="button" onClick={onExport} disabled={!selectedIds.size} className="min-h-11 rounded-xl bg-cyan-700 px-2 text-xs font-bold text-white disabled:opacity-40">画像として保存</button><button type="button" onClick={onExport} disabled={!selectedIds.size} className="min-h-11 rounded-xl bg-slate-700 px-2 text-xs font-bold text-white disabled:opacity-40">印刷</button><button type="button" onClick={onClear} disabled={!selectedIds.size} className="min-h-11 rounded-xl border border-cyan-200 bg-white px-2 text-xs font-bold text-cyan-900 disabled:opacity-40">選択を解除</button></div><p className="mt-2 text-xs text-cyan-900">出力前にA4プレビューを表示します。</p></div> : null}<div className="mt-3 space-y-2">{records.map((record) => selectionMode ? <label key={record.id} className={`flex min-h-20 cursor-pointer items-center gap-3 rounded-2xl border p-3 ${selectedIds.has(record.id) ? "border-cyan-500 bg-cyan-50" : "border-slate-100 bg-slate-50"}`}><input type="checkbox" checked={selectedIds.has(record.id)} onChange={() => onToggle(record.id)} className="h-5 w-5 accent-cyan-700" /><RecordListText record={record} /></label> : <button key={record.id} type="button" onClick={() => onEdit(record)} className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-3 text-left"><RecordListText record={record} /></button>)}</div></section>;
+}
+
+function RecordListText({ record }: { record: StoredMedicalRecord }) {
+  return <span className="min-w-0 flex-1"><span className="text-sm font-bold text-slate-800">{formatDate(record.visitDate)}</span><span className="mt-1 block text-sm font-semibold text-teal-800">{record.department}</span><span className="mt-1 block truncate text-xs text-slate-500">{record.hospitalName || "病院名未入力"}</span><span className="mt-2 block text-xs text-slate-500">受診方法：{visitMethods.find((method) => method.id === record.visitMethod)?.label ?? "未入力"}{record.appointmentDateTime ? `　予約：${formatDateTime(record.appointmentDateTime)}` : ""}</span></span>;
 }
 
 function NewMedicalDraftChooser({ drafts, onOpen, onDelete, onCreate }: { drafts: DraftEntry<MedicalDraftPayload>[]; onOpen: (draft: DraftEntry<MedicalDraftPayload>) => void; onDelete: (draft: DraftEntry<MedicalDraftPayload>) => void; onCreate: () => void }) {

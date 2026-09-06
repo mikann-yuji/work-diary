@@ -436,7 +436,7 @@ export function WorkDiary({ tab, onTabChange, onDraftStatusChange }: { tab: Diar
       ) : tab === "medical" ? (
         <MedicalRecordsPage uid={uid ?? ""} records={medicalRecords} state={medicalState} requestedRecordId={requestedMedicalId} onRequestHandled={() => setRequestedMedicalId(null)} onToast={showToast} onDraftStatusChange={setMedicalDraftStatus} />
       ) : tab === "calendar" ? (
-        <MonthlyCalendar recordsByDate={recordsByDate} medicalRecords={medicalRecords} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} onOpenMedical={(recordId) => { setRequestedMedicalId(recordId); onTabChange("medical"); }} onToast={showToast} />
+        <MonthlyCalendar uid={uid ?? ""} recordsByDate={recordsByDate} medicalRecords={medicalRecords} recordsState={historyState} onEdit={editRecord} onCreate={createRecordForDate} onOpenMedical={(recordId) => { setRequestedMedicalId(recordId); onTabChange("medical"); }} onToast={showToast} />
       ) : (
         <History records={records} state={historyState} onEdit={editRecord} />
       )}
