@@ -1,6 +1,6 @@
 "use client";
 
-import { captureMedicalRecordPage } from "@/lib/export/medical-record-export";
+import { captureMedicalRecordPage, withTimeout } from "@/lib/export/medical-record-export";
 import type { PreparedMedicalRecord } from "@/components/medical-record-export-page";
 
 export type MedicalRecordImage = {
@@ -18,7 +18,7 @@ export async function generateMedicalRecordImages(
   const images: MedicalRecordImage[] = [];
   for (let index = 0; index < records.length; index += 1) {
     const prepared = records[index];
-    const { canvas, compact } = await captureMedicalRecordPage(prepared);
+    const { canvas, compact } = await withTimeout(captureMedicalRecordPage(prepared), 30_000, "Medical record image generation timed out");
     try {
       const blob = await canvasToBlob(canvas);
       images.push({

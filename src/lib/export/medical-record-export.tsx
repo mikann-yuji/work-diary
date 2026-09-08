@@ -29,7 +29,7 @@ export async function prepareMedicalRecords(uid: string, records: StoredMedicalR
       for (const image of references) {
         if (!image.path.startsWith(`users/${uid}/medicalRecords/${record.id}/`)) throw new MedicalAttachmentLoadError(record.id);
         try {
-          const blob = await getMedicalImageBlob(image.path);
+          const blob = await withTimeout(getMedicalImageBlob(image.path), 20_000, "Medical attachment timed out");
           const url = URL.createObjectURL(blob);
           objectUrls.push(url);
           attachments.push({ id: image.id, label: image.label, url });
@@ -85,4 +85,13 @@ export async function captureMedicalRecordPage(prepared: PreparedMedicalRecord) 
 
 function cleanup(root: Root, host: HTMLDivElement) { root.unmount(); host.remove(); }
 function afterRender() { return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))); }
-async function waitForImages(host: HTMLElement) { await Promise.all([...host.querySelectorAll("img")].map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("Image load failed")); }))); }
+async function waitForImages(host: HTMLElement) {
+  await withTimeout(Promise.all([...host.querySelectorAll("img")].map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("Image load failed")); }))), 15_000, "Image rendering timed out");
+}
+
+export function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), milliseconds);
+    promise.then((value) => { window.clearTimeout(timer); resolve(value); }, (error) => { window.clearTimeout(timer); reject(error); });
+  });
+}

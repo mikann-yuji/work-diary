@@ -67,7 +67,7 @@ export function MedicalRecordExportDialog({ uid, records, initialImageMode = fal
     document.body.style.overflow = "hidden";
     closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onClose();
+      if (event.key === "Escape") onClose();
       if (event.key !== "Tab") return;
       const dialog = document.querySelector<HTMLElement>("[data-medical-export-dialog]");
       const focusable = dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
@@ -79,7 +79,7 @@ export function MedicalRecordExportDialog({ uid, records, initialImageMode = fal
     };
     document.addEventListener("keydown", onKeyDown);
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKeyDown); };
-  }, [busy, onClose]);
+  }, [onClose]);
 
   const hasCompactPage = useMemo(() => images.some((image) => image.compact), [images]);
 
@@ -127,18 +127,13 @@ export function MedicalRecordExportDialog({ uid, records, initialImageMode = fal
     anchor.remove();
   }
 
-  function printRecords() {
-    if (busy || !images.length || !approveCompactOutput()) return;
-    window.print();
-  }
-
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/65 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/65 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section data-medical-export-dialog role="dialog" aria-modal="true" aria-labelledby="medical-export-title" className="mx-auto max-w-4xl rounded-3xl bg-slate-50 shadow-2xl">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-3xl border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur print:hidden">
           <div className="min-w-0"><h2 id="medical-export-title" className="font-bold text-slate-900">通院記録の出力プレビュー</h2><p className="text-xs text-slate-500">{records.length}件・{records.length}ページ</p></div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} disabled={busy} aria-label="出力プレビューを閉じる" className="h-11 w-11 rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700 disabled:opacity-40">×</button>
+          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="出力プレビューを閉じる" className="h-11 w-11 rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700">×</button>
         </header>
 
         <div className="p-4 sm:p-6 print:p-0">
@@ -146,11 +141,10 @@ export function MedicalRecordExportDialog({ uid, records, initialImageMode = fal
           {loadFailed && !busy ? <p className="rounded-2xl bg-rose-50 p-4 text-center text-sm font-semibold text-rose-800">通院記録を出力できませんでした</p> : null}
           {!busy && images.length ? <>
             {hasCompactPage ? <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">入力内容が多いため、文字や画像が小さくなります。出力時に確認できます。</p> : null}
-            <div className="medical-export-controls mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 print:hidden">
+            <div className="medical-export-controls mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3 print:hidden">
               <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 font-bold text-slate-700">戻る</button>
               <button type="button" onClick={() => void savePdf()} className="min-h-11 rounded-xl bg-teal-700 px-3 font-bold text-white">PDFとして保存</button>
               <button type="button" onClick={() => setImageMode(true)} className="min-h-11 rounded-xl bg-cyan-700 px-3 font-bold text-white">画像として保存</button>
-              <button type="button" onClick={printRecords} className="min-h-11 rounded-xl bg-slate-700 px-3 font-bold text-white">印刷</button>
             </div>
             {imageMode ? <div className="medical-export-controls mb-5 rounded-2xl border border-cyan-200 bg-cyan-50 p-4 print:hidden">
               <p className="text-sm text-cyan-950">iPhoneでは共有画面から「画像を保存」を選ぶと、写真アプリに保存できます</p>
