@@ -11,12 +11,10 @@ import {
 } from "react";
 import {
   browserLocalPersistence,
-  getRedirectResult,
   GoogleAuthProvider,
   onAuthStateChanged,
   setPersistence,
   signInWithPopup,
-  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -41,12 +39,6 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const googleProvider = new GoogleAuthProvider();
-const redirectFallbackCodes = new Set([
-  "auth/popup-blocked",
-  "auth/cancelled-popup-request",
-  "auth/operation-not-supported-in-this-environment",
-]);
-
 function getAuthErrorCode(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error
     ? String(error.code)
@@ -56,6 +48,9 @@ function getAuthErrorCode(error: unknown) {
 function toJapaneseAuthError(error: unknown) {
   const code = getAuthErrorCode(error);
   if (code === "auth/popup-closed-by-user") return "ログインがキャンセルされました。もう一度お試しください。";
+  if (code === "auth/popup-blocked") return "ログイン画面を開けませんでした。ブラウザのポップアップを許可して、もう一度お試しください。";
+  if (code === "auth/cancelled-popup-request") return "ログイン処理が中断されました。少し待ってから、もう一度お試しください。";
+  if (code === "auth/operation-not-supported-in-this-environment") return "このブラウザではログイン画面を開けません。SafariまたはChromeでお試しください。";
   if (code === "auth/network-request-failed") return "通信を確認して、もう一度お試しください。";
   if (code === "auth/unauthorized-domain") return "この環境ではログインを利用できません。管理者へご連絡ください。";
   return "ログインできませんでした。しばらくしてからもう一度お試しください。";
@@ -90,9 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async function initializeAuth() {
       try {
         await setPersistence(firebaseAuth, browserLocalPersistence);
-        await getRedirectResult(firebaseAuth);
       } catch (error) {
-        console.error("Firebase redirect authentication failed", error);
         if (active) setAuthError(toJapaneseAuthError(error));
       }
 
@@ -129,18 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await signInWithPopup(firebaseAuth, googleProvider);
     } catch (error) {
-      if (redirectFallbackCodes.has(getAuthErrorCode(error))) {
-        try {
-          await signInWithRedirect(firebaseAuth, googleProvider);
-          return;
-        } catch (redirectError) {
-          console.error("Firebase redirect fallback failed", redirectError);
-          setAuthError(toJapaneseAuthError(redirectError));
-        }
-      } else {
-        console.error("Firebase popup authentication failed", error);
-        setAuthError(toJapaneseAuthError(error));
-      }
+      setAuthError(toJapaneseAuthError(error));
       signInLock.current = false;
       setSigningIn(false);
     }
