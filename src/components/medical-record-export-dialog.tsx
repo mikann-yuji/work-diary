@@ -10,16 +10,17 @@ import type { StoredMedicalRecord } from "@/types/medical-record";
 type PreviewImage = MedicalRecordImage & { url: string; file: File };
 type Progress = { label: string; current?: number; total?: number };
 
-export function MedicalRecordExportDialog({ uid, records, onClose, onToast }: {
+export function MedicalRecordExportDialog({ uid, records, initialImageMode = false, onClose, onToast }: {
   uid: string;
   records: StoredMedicalRecord[];
+  initialImageMode?: boolean;
   onClose: () => void;
   onToast: (message: string, type: "success" | "error") => void;
 }) {
   const [images, setImages] = useState<PreviewImage[]>([]);
   const [progress, setProgress] = useState<Progress>({ label: "通院記録を読み込んでいます" });
   const [busy, setBusy] = useState(true);
-  const [imageMode, setImageMode] = useState(false);
+  const [imageMode, setImageMode] = useState(initialImageMode);
   const [loadFailed, setLoadFailed] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const cleanupAttachmentsRef = useRef<(() => void) | null>(null);

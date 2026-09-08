@@ -10,7 +10,7 @@ export class MedicalAttachmentLoadError extends Error {
 }
 
 export function sortMedicalRecords(records: StoredMedicalRecord[]) {
-  return [...records].sort((a, b) => a.visitDate.localeCompare(b.visitDate) || (a.appointmentDateTime ?? "").localeCompare(b.appointmentDateTime ?? "") || (a.createdAt?.toMillis() ?? 0) - (b.createdAt?.toMillis() ?? 0) || a.id.localeCompare(b.id));
+  return [...records].sort((a, b) => a.visitDate.localeCompare(b.visitDate) || (a.createdAt?.toMillis() ?? 0) - (b.createdAt?.toMillis() ?? 0) || a.id.localeCompare(b.id));
 }
 
 export async function prepareMedicalRecords(uid: string, records: StoredMedicalRecord[], onProgress: (current: number, total: number) => void) {
