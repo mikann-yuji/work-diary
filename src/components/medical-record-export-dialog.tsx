@@ -9,18 +9,19 @@ import type { StoredMedicalRecord } from "@/types/medical-record";
 
 type PreviewImage = MedicalRecordImage & { url: string; file: File };
 type Progress = { label: string; current?: number; total?: number };
+export type MedicalExportMode = "preview" | "pdf" | "image";
 
-export function MedicalRecordExportDialog({ uid, records, initialImageMode = false, onClose, onToast }: {
+export function MedicalRecordExportDialog({ uid, records, mode = "preview", onClose, onToast }: {
   uid: string;
   records: StoredMedicalRecord[];
-  initialImageMode?: boolean;
+  mode?: MedicalExportMode;
   onClose: () => void;
   onToast: (message: string, type: "success" | "error") => void;
 }) {
   const [images, setImages] = useState<PreviewImage[]>([]);
   const [progress, setProgress] = useState<Progress>({ label: "通院記録を読み込んでいます" });
   const [busy, setBusy] = useState(true);
-  const [imageMode, setImageMode] = useState(initialImageMode);
+  const [imageMode, setImageMode] = useState(mode === "image");
   const [loadFailed, setLoadFailed] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const cleanupAttachmentsRef = useRef<(() => void) | null>(null);
@@ -40,6 +41,18 @@ export function MedicalRecordExportDialog({ uid, records, initialImageMode = fal
           if (!cancelled) setProgress({ label: "プレビューを作成しています", current, total });
         });
         if (cancelled) return;
+        if (mode === "pdf") {
+          setProgress({ label: "PDFを作成しています", current: 0, total: generated.length });
+          const { generateMedicalRecordsPdf } = await import("@/lib/pdf/generate-medical-records-pdf");
+          await generateMedicalRecordsPdf(generated, (current, total) => {
+            if (!cancelled) setProgress({ label: "PDFを作成しています", current, total });
+          });
+          if (!cancelled) {
+            onToast("PDFを保存しました", "success");
+            onClose();
+          }
+          return;
+        }
         setImages(generated.map((image) => ({
           ...image,
           url: URL.createObjectURL(image.blob),

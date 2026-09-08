@@ -16,7 +16,7 @@ import type { StoredWorkRecord } from "@/lib/firestore/records";
 import type { StoredMedicalRecord } from "@/types/medical-record";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
-import { MedicalRecordExportDialog } from "@/components/medical-record-export-dialog";
+import { MedicalRecordExportDialog, type MedicalExportMode } from "@/components/medical-record-export-dialog";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type MedicalEvent = { type: "visit" | "deadline" | "appointment"; record: StoredMedicalRecord };
@@ -67,7 +67,7 @@ export function MonthlyCalendar({
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const [previewImages, setPreviewImages] = useState<PreviewRecordImage[] | null>(null);
   const [selectedMedicalExportIds, setSelectedMedicalExportIds] = useState<Set<string>>(() => new Set());
-  const [medicalExportRecords, setMedicalExportRecords] = useState<StoredMedicalRecord[] | null>(null);
+  const [medicalExportRequest, setMedicalExportRequest] = useState<{ records: StoredMedicalRecord[]; mode: MedicalExportMode } | null>(null);
   const today = useMemo(() => getLocalDateString(), []);
   const calendarDays = useMemo(() => createCalendarDays(visibleMonth), [visibleMonth]);
   const summary = useMemo(
@@ -277,9 +277,10 @@ export function MonthlyCalendar({
               selectedMedicalExportIds={selectedMedicalExportIds}
               onToggleMedicalExport={(id) => setSelectedMedicalExportIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })}
               onClearMedicalExport={() => setSelectedMedicalExportIds(new Set())}
-              onExportMedical={() => {
+              onExportMedical={(event) => {
                 const selected = medicalRecords.filter((item) => selectedMedicalExportIds.has(item.id));
-                if (selected.length) setMedicalExportRecords(selected);
+                const mode = event.currentTarget.textContent?.includes("画像") ? "image" : "pdf";
+                if (selected.length) setMedicalExportRequest({ records: selected, mode });
                 else onToast("出力する通院記録を選択してください", "error");
               }}
             />
@@ -287,7 +288,7 @@ export function MonthlyCalendar({
         </div>
       )}
       {previewImages ? <ImagePreviewDialog images={previewImages} onClose={closeImagePreview} onToast={onToast} /> : null}
-      {medicalExportRecords ? <MedicalRecordExportDialog uid={uid} records={medicalExportRecords} onClose={() => setMedicalExportRecords(null)} onToast={onToast} /> : null}
+      {medicalExportRequest ? <MedicalRecordExportDialog uid={uid} records={medicalExportRequest.records} mode={medicalExportRequest.mode} onClose={() => setMedicalExportRequest(null)} onToast={onToast} /> : null}
     </div>
   );
 }
@@ -390,7 +391,7 @@ function MedicalCalendarLegend() {
   return <ul aria-label="通院予定の凡例" className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-600">{(Object.keys(medicalEventLabels) as Array<keyof typeof medicalEventLabels>).map((type) => <li key={type} className="flex items-center gap-1.5"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${medicalEventStyles[type]}`} />{medicalEventLabels[type]}</li>)}</ul>;
 }
 
-function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onOpenMedical, selectedMedicalExportIds, onToggleMedicalExport, onClearMedicalExport, onExportMedical }: { date: string; record: StoredWorkRecord | null; medicalEvents: MedicalEvent[]; onEdit: () => void; onCreate: () => void; onOpenMedical: (recordId: string) => void; selectedMedicalExportIds: Set<string>; onToggleMedicalExport: (id: string) => void; onClearMedicalExport: () => void; onExportMedical: () => void }) {
+function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onOpenMedical, selectedMedicalExportIds, onToggleMedicalExport, onClearMedicalExport, onExportMedical }: { date: string; record: StoredWorkRecord | null; medicalEvents: MedicalEvent[]; onEdit: () => void; onCreate: () => void; onOpenMedical: (recordId: string) => void; selectedMedicalExportIds: Set<string>; onToggleMedicalExport: (id: string) => void; onClearMedicalExport: () => void; onExportMedical: React.MouseEventHandler<HTMLButtonElement> }) {
   const causes = record ? getCauseDisplayLabels(record.causes) : [];
   const visitRecords = [...new Map(medicalEvents.filter((event) => event.type === "visit").map((event) => [event.record.id, event.record])).values()];
   return (
