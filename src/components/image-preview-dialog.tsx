@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export type PreviewRecordImage = { date: string; blob: Blob; url: string; file: File };
+export type PreviewRecordImage = { id?: string; date: string; blob: Blob; url: string; file: File };
 
 export function ImagePreviewDialog({
   images,
@@ -75,7 +75,7 @@ export function ImagePreviewDialog({
         <div className="mt-5 space-y-5">
           {images.map((image) => {
             const canShareOne = canShareFiles([image.file]);
-            return <article key={image.date} className="rounded-2xl border border-slate-200 p-3">
+            return <article key={image.id ?? image.date} className="rounded-2xl border border-slate-200 p-3">
               <h3 className="text-sm font-bold text-slate-700">{formatDate(image.date)}</h3>
               {/* Blob URL points only to an in-memory image generated in this browser. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
