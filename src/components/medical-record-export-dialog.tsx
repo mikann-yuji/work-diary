@@ -78,7 +78,7 @@ export function MedicalRecordExportDialog({ uid, records, mode = "image", onClos
     onClose();
   }
 
-  if (pdfOutput) return <PdfSaveDialog output={pdfOutput} title="通院記録" onClose={close} onToast={onToast} />;
+  if (pdfOutput) return <PdfSaveDialog output={pdfOutput} onClose={close} onToast={onToast} />;
   if (previewImages) return <ImagePreviewDialog images={previewImages} onClose={close} onToast={onToast} />;
   if (typeof document === "undefined") return null;
 

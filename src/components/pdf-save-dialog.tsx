@@ -5,9 +5,8 @@ import { createPortal } from "react-dom";
 
 export type PdfOutput = { blob: Blob; fileName: string };
 
-export function PdfSaveDialog({ output, title, onClose, onToast }: {
+export function PdfSaveDialog({ output, onClose, onToast }: {
   output: PdfOutput;
-  title: string;
   onClose: () => void;
   onToast: (message: string, type: "success" | "error") => void;
 }) {
@@ -29,7 +28,9 @@ export function PdfSaveDialog({ output, title, onClose, onToast }: {
     if (!canShare || sharing) return;
     setSharing(true);
     try {
-      await navigator.share({ files: [file], title });
+      // Supplying `title` with files can be persisted as a separate text item
+      // by some iOS share destinations. Share only the generated PDF file.
+      await navigator.share({ files: [file] });
       onToast("PDFを共有しました", "success");
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) onToast("PDFを保存できませんでした。もう一度お試しください", "error");

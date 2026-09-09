@@ -298,7 +298,7 @@ export function MonthlyCalendar({
         </div>
       )}
       {previewImages ? <ImagePreviewDialog images={previewImages} onClose={closeImagePreview} onToast={onToast} /> : null}
-      {pdfOutput ? <PdfSaveDialog output={pdfOutput} title="仕事上の傾向と対策" onClose={() => setPdfOutput(null)} onToast={onToast} /> : null}
+      {pdfOutput ? <PdfSaveDialog output={pdfOutput} onClose={() => setPdfOutput(null)} onToast={onToast} /> : null}
       {medicalExportRequest ? <MedicalRecordExportDialog uid={uid} records={medicalExportRequest.records} mode={medicalExportRequest.mode} onClose={() => setMedicalExportRequest(null)} onToast={onToast} /> : null}
     </div>
   );
