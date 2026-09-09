@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
 import { PdfSaveDialog, type PdfOutput } from "@/components/pdf-save-dialog";
-import { MedicalAttachmentLoadError, prepareMedicalRecords } from "@/lib/export/medical-record-export";
 import { ExportCancelledError, exportErrorMessage } from "@/lib/export/browser-export-runtime";
+import { generateExport, type ExportProgress } from "@/lib/export/export-engine";
+import { createMedicalExportAdapter, medicalExportPages } from "@/lib/export/export-adapters";
 import type { StoredMedicalRecord } from "@/types/medical-record";
 
-type Progress = { label: string; current?: number; total?: number };
 export type MedicalExportMode = "preview" | "pdf" | "image";
 
 export function MedicalRecordExportDialog({ uid, records, mode = "image", onClose, onToast }: {
@@ -18,8 +18,8 @@ export function MedicalRecordExportDialog({ uid, records, mode = "image", onClos
   onClose: () => void;
   onToast: (message: string, type: "success" | "error") => void;
 }) {
-  const actualMode = mode === "preview" ? "image" : mode;
-  const [progress, setProgress] = useState<Progress>({ label: "通院記録を読み込んでいます" });
+  const actualMode = mode === "pdf" ? "pdf" : "png";
+  const [progress, setProgress] = useState<ExportProgress>({ stage: "validate" });
   const [busy, setBusy] = useState(true);
   const [failed, setFailed] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -33,32 +33,22 @@ export function MedicalRecordExportDialog({ uid, records, mode = "image", onClos
     const controller = new AbortController();
     abortRef.current = controller;
     void (async () => {
-      let cleanupAttachments: (() => void) | undefined;
       try {
-        const bundle = await prepareMedicalRecords(uid, records, (current, total) => {
-          if (active) setProgress({ label: "添付画像を読み込んでいます", current, total });
-        }, controller.signal);
-        cleanupAttachments = bundle.cleanup;
+        const output = await generateExport({
+          pages: medicalExportPages(records),
+          adapter: createMedicalExportAdapter(uid),
+          format: actualMode,
+          signal: controller.signal,
+          onProgress: (value) => { if (active) setProgress(value); },
+        });
         if (!active) return;
-
-        if (actualMode === "pdf") {
-          setProgress({ label: "PDFを作成しています", current: 0, total: bundle.prepared.length });
-          const { generateMedicalRecordsPdf } = await import("@/lib/pdf/generate-medical-records-pdf");
-          const output = await generateMedicalRecordsPdf(bundle.prepared, (current, total) => {
-            if (active) setProgress({ label: "PDFを作成しています", current, total });
-          }, controller.signal);
+        if (output.format === "pdf") {
           if (!active) return;
-          setPdfOutput(output);
+          setPdfOutput({ blob: output.blob, fileName: output.fileName });
           onToast("PDFを作成しました", "success");
         } else {
-          setProgress({ label: "PNG画像を作成しています", current: 0, total: bundle.prepared.length });
-          const { generateMedicalRecordImages } = await import("@/lib/image/generate-medical-record-images");
-          const generated = await generateMedicalRecordImages(bundle.prepared, (current, total) => {
-            if (active) setProgress({ label: "PNG画像を作成しています", current, total });
-          }, controller.signal);
-          if (!active) return;
-          setPreviewImages(generated.map((image) => ({
-            id: image.recordId,
+          setPreviewImages(output.images.map((image) => ({
+            id: image.id,
             date: image.date,
             blob: image.blob,
             url: URL.createObjectURL(image.blob),
@@ -69,14 +59,8 @@ export function MedicalRecordExportDialog({ uid, records, mode = "image", onClos
       } catch (error) {
         if (!active || error instanceof ExportCancelledError) return;
         setFailed(true);
-        onToast(
-          error instanceof MedicalAttachmentLoadError
-            ? "添付画像を読み込めませんでした"
-            : exportErrorMessage(error, actualMode === "pdf" ? "PDF" : "PNG画像"),
-          "error",
-        );
+        onToast(exportErrorMessage(error, actualMode === "pdf" ? "PDF" : "PNG画像"), "error");
       } finally {
-        cleanupAttachments?.();
         if (active) setBusy(false);
       }
     })();
@@ -105,10 +89,18 @@ export function MedicalRecordExportDialog({ uid, records, mode = "image", onClos
           <h2 id="medical-export-status" className="pt-2 text-base font-bold text-slate-800">{actualMode === "pdf" ? "PDFを作成" : "画像を作成"}</h2>
           <button ref={closeRef} type="button" onClick={close} aria-label="出力処理を閉じる" className="h-11 w-11 shrink-0 rounded-xl border border-slate-200 bg-white text-xl text-slate-700">×</button>
         </div>
-        {busy ? <div className="flex min-h-44 flex-col items-center justify-center gap-4" aria-live="polite"><span role="status" aria-label="出力中" className="h-9 w-9 animate-spin rounded-full border-4 border-teal-100 border-t-teal-700" /><p className="text-center font-semibold text-teal-900">{progress.label}{progress.total ? `（${progress.current ?? 0}/${progress.total}）` : ""}</p><button type="button" onClick={close} className="min-h-11 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700">中止</button></div> : null}
+        {busy ? <div className="flex min-h-44 flex-col items-center justify-center gap-4" aria-live="polite"><span role="status" aria-label="出力中" className="h-9 w-9 animate-spin rounded-full border-4 border-teal-100 border-t-teal-700" /><p className="text-center font-semibold text-teal-900">{medicalProgressLabel(progress, actualMode)}</p><button type="button" onClick={close} className="min-h-11 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700">中止</button></div> : null}
         {failed && !busy ? <div className="mt-4"><p role="alert" className="rounded-2xl bg-rose-50 p-4 text-center text-sm font-semibold text-rose-800">通院記録を出力できませんでした</p><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => { setBusy(true); setFailed(false); setRetryKey((value) => value + 1); }} className="min-h-11 rounded-xl bg-teal-700 px-3 font-bold text-white">再試行</button><button type="button" onClick={close} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 font-bold text-slate-700">閉じる</button></div></div> : null}
       </section>
     </div>,
     document.body,
   );
+}
+
+function medicalProgressLabel(progress: ExportProgress, format: "pdf" | "png") {
+  const suffix = progress.total ? `（${progress.current ?? 0}/${progress.total}）` : "";
+  if (progress.stage === "load-records") return `通院記録を読み込んでいます${suffix}`;
+  if (progress.stage === "load-images" || progress.stage === "wait-images") return `添付画像を読み込んでいます${suffix}`;
+  if (progress.stage === "mount-layout" || progress.stage === "wait-dom" || progress.stage === "wait-fonts") return `出力画面を準備しています${suffix}`;
+  return `${format === "pdf" ? "PDF" : "PNG画像"}を作成しています${suffix}`;
 }

@@ -3,9 +3,12 @@
 export type ExportStage = "prepare-dom" | "wait-fonts" | "wait-images" | "render-canvas" | "create-blob";
 
 export class ExportRuntimeError extends Error {
-  constructor(public readonly stage: ExportStage, message: string, options?: ErrorOptions) {
+  public readonly timedOut: boolean;
+
+  constructor(public readonly stage: ExportStage, message: string, options?: ErrorOptions & { timedOut?: boolean }) {
     super(message, options);
     this.name = "ExportRuntimeError";
+    this.timedOut = options?.timedOut ?? false;
   }
 }
 
@@ -37,14 +40,18 @@ export function withExportTimeout<T>(
     };
     const onAbort = () => finish(() => reject(new ExportCancelledError()));
     const timer = window.setTimeout(
-      () => finish(() => reject(new ExportRuntimeError(stage, `${stage} timed out`))),
+      () => finish(() => reject(new ExportRuntimeError(stage, `${stage} timed out`, { timedOut: true }))),
       milliseconds,
     );
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) return onAbort();
     promise.then(
       (value) => finish(() => resolve(value)),
-      (error) => finish(() => reject(error instanceof ExportRuntimeError ? error : new ExportRuntimeError(stage, `${stage} failed`, { cause: error }))),
+      (error) => finish(() => reject(
+        error instanceof ExportRuntimeError || error instanceof ExportCancelledError
+          ? error
+          : new ExportRuntimeError(stage, `${stage} failed`, { cause: error }),
+      )),
     );
   });
 }
@@ -189,7 +196,10 @@ export function createOffscreenExportHost() {
 export function exportErrorMessage(error: unknown, format: "PDF" | "PNG画像") {
   if (error instanceof ExportRuntimeError) {
     if (error.stage === "prepare-dom") return "出力用画面を準備できませんでした";
-    if (error.stage === "wait-images") return "添付画像の読み込みがタイムアウトしました";
+    if (error.stage === "wait-images") {
+      return error.timedOut ? "添付画像の読み込みがタイムアウトしました" : "添付画像を読み込めませんでした";
+    }
+    if (error.stage === "render-canvas" && error.timedOut) return `${format}の生成がタイムアウトしました`;
   }
   return `${format}の生成に失敗しました`;
 }

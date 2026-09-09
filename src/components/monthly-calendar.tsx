@@ -19,6 +19,8 @@ import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-
 import { MedicalRecordExportDialog, type MedicalExportMode } from "@/components/medical-record-export-dialog";
 import { PdfSaveDialog, type PdfOutput } from "@/components/pdf-save-dialog";
 import { ExportCancelledError, exportErrorMessage } from "@/lib/export/browser-export-runtime";
+import { generateExport, type ExportProgress } from "@/lib/export/export-engine";
+import { workExportAdapter, workExportPages } from "@/lib/export/export-adapters";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type MedicalEvent = { type: "visit" | "deadline" | "appointment"; record: StoredMedicalRecord };
@@ -67,7 +69,7 @@ export function MonthlyCalendar({
   const [exportMode, setExportMode] = useState(false);
   const [exportDates, setExportDates] = useState<Set<string>>(() => new Set());
   const [generating, setGenerating] = useState<"pdf" | "image" | null>(null);
-  const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
+  const [exportProgress, setExportProgress] = useState<ExportProgress>({ stage: "validate", current: 0, total: 0 });
   const [previewImages, setPreviewImages] = useState<PreviewRecordImage[] | null>(null);
   const [pdfOutput, setPdfOutput] = useState<PdfOutput | null>(null);
   const [selectedMedicalExportIds, setSelectedMedicalExportIds] = useState<Set<string>>(() => new Set());
@@ -160,21 +162,18 @@ export function MonthlyCalendar({
     const controller = new AbortController();
     exportAbortRef.current = controller;
     setGenerating("pdf");
-    setExportProgress({ current: 0, total: selectedRecords.length });
+    setExportProgress({ stage: "validate", current: 0, total: selectedRecords.length });
     onToast("PDFを作成しています", "success");
 
     try {
-      const { generateRecordsPdf } = await import("@/lib/pdf/generate-records-pdf");
-      const output = await generateRecordsPdf(selectedRecords, (current, total) => setExportProgress({ current, total }), controller.signal);
-      setPdfOutput(output);
+      const output = await generateExport({ pages: workExportPages(selectedRecords), adapter: workExportAdapter, format: "pdf", signal: controller.signal, onProgress: setExportProgress });
+      if (output.format !== "pdf") throw new Error("Unexpected export format");
+      setPdfOutput({ blob: output.blob, fileName: output.fileName });
       setExportDates(new Set());
       setExportMode(false);
       onToast("PDFを作成しました", "success");
     } catch (error) {
-      if (isRecordOverflowError(error)) {
-        const [, month, day] = error.date.split("-").map(Number);
-        onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
-      } else if (!(error instanceof ExportCancelledError)) {
+      if (!(error instanceof ExportCancelledError)) {
         onToast(exportErrorMessage(error, "PDF"), "error");
       }
     } finally {
@@ -198,23 +197,19 @@ export function MonthlyCalendar({
     const controller = new AbortController();
     exportAbortRef.current = controller;
     setGenerating("image");
-    setExportProgress({ current: 0, total: selectedRecords.length });
+    setExportProgress({ stage: "validate", current: 0, total: selectedRecords.length });
 
     try {
-      const { generateRecordImages } = await import("@/lib/image/generate-record-images");
-      const images = await generateRecordImages(selectedRecords, (current, total) => setExportProgress({ current, total }), controller.signal);
-      setPreviewImages(images.map(({ date, blob }) => ({
-        date,
-        blob,
+      const output = await generateExport({ pages: workExportPages(selectedRecords), adapter: workExportAdapter, format: "png", signal: controller.signal, onProgress: setExportProgress });
+      if (output.format !== "png") throw new Error("Unexpected export format");
+      setPreviewImages(output.images.map(({ id, date, blob, fileName }) => ({
+        id, date, blob,
         url: URL.createObjectURL(blob),
-        file: new File([blob], `work-diary_${date}.png`, { type: "image/png" }),
+        file: new File([blob], fileName, { type: "image/png" }),
       })));
       onToast("画像を作成しました", "success");
     } catch (error) {
-      if (isRecordOverflowError(error)) {
-        const [, month, day] = error.date.split("-").map(Number);
-        onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
-      } else if (!(error instanceof ExportCancelledError)) {
+      if (!(error instanceof ExportCancelledError)) {
         onToast(exportErrorMessage(error, "PNG画像"), "error");
       }
     } finally {
@@ -360,11 +355,11 @@ function CalendarDay({ date, weekday, record, medicalEvents, selected, pdfMode, 
   );
 }
 
-function PdfExportControls({ selectedCount, generating, progress, onSelectAll, onClear, onGeneratePdf, onGenerateImages, onCancel }: { selectedCount: number; generating: "pdf" | "image" | null; progress: { current: number; total: number }; onSelectAll: () => void; onClear: () => void; onGeneratePdf: () => void; onGenerateImages: () => void; onCancel: () => void }) {
+function PdfExportControls({ selectedCount, generating, progress, onSelectAll, onClear, onGeneratePdf, onGenerateImages, onCancel }: { selectedCount: number; generating: "pdf" | "image" | null; progress: ExportProgress; onSelectAll: () => void; onClear: () => void; onGeneratePdf: () => void; onGenerateImages: () => void; onCancel: () => void }) {
   return (
     <div className="mt-4 rounded-2xl border border-teal-200 bg-teal-50 p-3">
       <p className="text-sm font-bold text-teal-900">{selectedCount}日選択中</p>
-      {generating ? <div className="mt-3 flex items-center gap-3" aria-live="polite"><span role="status" aria-label={`${generating === "pdf" ? "PDF" : "画像"}を作成中`} className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700"><span className="sr-only">{generating === "pdf" ? "PDF" : "画像"}を作成中</span></span><p className="text-sm font-semibold text-teal-900">{generating === "pdf" ? "PDF" : "画像"}を作成しています（{progress.current}/{progress.total}）</p></div> : null}
+      {generating ? <div className="mt-3 flex items-center gap-3" aria-live="polite"><span role="status" aria-label={`${generating === "pdf" ? "PDF" : "画像"}を作成中`} className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-teal-200 border-t-teal-700"><span className="sr-only">{generating === "pdf" ? "PDF" : "画像"}を作成中</span></span><p className="text-sm font-semibold text-teal-900">{progressLabel(progress, generating)}</p></div> : null}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button type="button" onClick={onSelectAll} disabled={Boolean(generating)} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">この月の記録をすべて選択</button>
         <button type="button" onClick={onClear} disabled={Boolean(generating) || selectedCount === 0} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">選択を解除</button>
@@ -376,8 +371,12 @@ function PdfExportControls({ selectedCount, generating, progress, onSelectAll, o
   );
 }
 
-function isRecordOverflowError(error: unknown): error is { date: string } {
-  return error instanceof Error && error.name === "RecordPageOverflowError" && "date" in error;
+function progressLabel(progress: ExportProgress, format: "pdf" | "image") {
+  const suffix = progress.total ? `（${progress.current ?? 0}/${progress.total}）` : "";
+  if (progress.stage === "load-records") return `記録を読み込んでいます${suffix}`;
+  if (progress.stage === "load-images" || progress.stage === "wait-images") return `画像を読み込んでいます${suffix}`;
+  if (progress.stage === "mount-layout" || progress.stage === "wait-dom" || progress.stage === "wait-fonts") return `出力画面を準備しています${suffix}`;
+  return `${format === "pdf" ? "PDF" : "PNG画像"}を作成しています${suffix}`;
 }
 
 function CalendarLegend() {
@@ -427,7 +426,7 @@ function SelectedDaySummary({ date, record, medicalEvents, onEdit, onCreate, onO
       ) : (
         <div className="mt-3"><p className="text-sm text-slate-500">この日の記録はありません</p><button type="button" onClick={onCreate} className="mt-4 min-h-12 w-full rounded-xl bg-teal-700 px-4 text-sm font-bold text-white hover:bg-teal-800">この日を記録する</button></div>
       )}
-      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <MedicalEventCard key={`${event.type}-${event.record.id}-${index}`} event={event} onOpen={() => onOpenMedical(event.record.id)} />)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}{visitRecords.length ? <fieldset className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><legend className="px-1 text-sm font-bold text-cyan-950">通院記録を出力</legend><div className="space-y-2">{visitRecords.map((medical) => <label key={medical.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-white p-2 text-sm"><input type="checkbox" checked={selectedMedicalExportIds.has(medical.id)} onChange={() => onToggleMedicalExport(medical.id)} className="h-5 w-5 accent-cyan-700" /><span className="min-w-0"><span className="block font-bold text-slate-700">{medical.hospitalName || "病院名未入力"}・{medical.department}</span><span className="block text-xs text-slate-500">{visitMethodLabel(medical.visitMethod)}{medical.appointmentDateTime ? `・予約 ${formatMedicalAppointmentDateTime(medical.appointmentDateTime)}` : ""}</span></span></label>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-teal-700 px-2 text-xs font-bold text-white disabled:opacity-40">PDFとして保存</button><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-cyan-700 px-2 text-xs font-bold text-white disabled:opacity-40">画像として保存</button><button type="button" onClick={onClearMedicalExport} disabled={!selectedMedicalExportIds.size} className="col-span-2 min-h-11 rounded-xl border border-cyan-200 bg-white px-2 text-xs font-bold text-cyan-900 disabled:opacity-40">選択を解除</button></div><p className="mt-2 text-xs text-cyan-900">出力前にA4プレビューを表示します。</p></fieldset> : null}</div>
+      <div className="mt-4 border-t border-slate-100 pt-4"><h3 className="text-sm font-bold text-slate-700">通院・予約</h3>{medicalEvents.length ? <div className="mt-2 space-y-2">{medicalEvents.map((event, index) => <MedicalEventCard key={`${event.type}-${event.record.id}-${index}`} event={event} onOpen={() => onOpenMedical(event.record.id)} />)}</div> : <p className="mt-2 text-sm text-slate-400">通院関係の記録はありません</p>}{visitRecords.length ? <fieldset className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50 p-3"><legend className="px-1 text-sm font-bold text-cyan-950">通院記録を出力</legend><div className="space-y-2">{visitRecords.map((medical) => <label key={medical.id} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-white p-2 text-sm"><input type="checkbox" checked={selectedMedicalExportIds.has(medical.id)} onChange={() => onToggleMedicalExport(medical.id)} className="h-5 w-5 accent-cyan-700" /><span className="min-w-0"><span className="block font-bold text-slate-700">{medical.hospitalName || "病院名未入力"}・{medical.department}</span><span className="block text-xs text-slate-500">{visitMethodLabel(medical.visitMethod)}{medical.appointmentDateTime ? `・予約 ${formatMedicalAppointmentDateTime(medical.appointmentDateTime)}` : ""}</span></span></label>)}</div><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-teal-700 px-2 text-xs font-bold text-white disabled:opacity-40">PDFとして保存</button><button type="button" onClick={onExportMedical} disabled={!selectedMedicalExportIds.size} className="min-h-11 rounded-xl bg-cyan-700 px-2 text-xs font-bold text-white disabled:opacity-40">画像として保存</button><button type="button" onClick={onClearMedicalExport} disabled={!selectedMedicalExportIds.size} className="col-span-2 min-h-11 rounded-xl border border-cyan-200 bg-white px-2 text-xs font-bold text-cyan-900 disabled:opacity-40">選択を解除</button></div></fieldset> : null}</div>
     </section>
   );
 }
