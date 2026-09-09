@@ -1,6 +1,7 @@
 "use client";
 
-import { captureMedicalRecordPage, withTimeout } from "@/lib/export/medical-record-export";
+import { captureMedicalRecordPage } from "@/lib/export/medical-record-export";
+import { canvasToPngBlob, releaseCanvas } from "@/lib/export/browser-export-runtime";
 import type { PreparedMedicalRecord } from "@/components/medical-record-export-page";
 
 export type MedicalRecordImage = {
@@ -14,13 +15,14 @@ export type MedicalRecordImage = {
 export async function generateMedicalRecordImages(
   records: PreparedMedicalRecord[],
   onProgress: (current: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<MedicalRecordImage[]> {
   const images: MedicalRecordImage[] = [];
   for (let index = 0; index < records.length; index += 1) {
     const prepared = records[index];
-    const { canvas, compact } = await withTimeout(captureMedicalRecordPage(prepared), 30_000, "Medical record image generation timed out");
+    const { canvas, compact } = await captureMedicalRecordPage(prepared, signal);
     try {
-      const blob = await canvasToBlob(canvas);
+      const blob = await canvasToPngBlob(canvas, signal);
       images.push({
         recordId: prepared.record.id,
         date: prepared.record.visitDate,
@@ -28,17 +30,8 @@ export async function generateMedicalRecordImages(
         fileName: `medical-record_${prepared.record.visitDate}_${prepared.record.id.slice(0, 8)}.png`,
         compact,
       });
-    } finally {
-      canvas.width = 0;
-      canvas.height = 0;
-    }
+    } finally { releaseCanvas(canvas); }
     onProgress(index + 1, records.length);
   }
   return images;
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("PNG generation failed")), "image/png");
-  });
 }

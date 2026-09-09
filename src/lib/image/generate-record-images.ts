@@ -1,7 +1,8 @@
 "use client";
 
 import type { StoredWorkRecord } from "@/lib/firestore/records";
-import { renderFittedRecordPage, waitForExportFonts, withExportTimeout } from "@/lib/export/render-record-page";
+import { renderFittedRecordPage } from "@/lib/export/render-record-page";
+import { canvasToPngBlob, captureExportPage, releaseCanvas, waitForExportFonts } from "@/lib/export/browser-export-runtime";
 
 export type GeneratedRecordImage = {
   date: string;
@@ -11,6 +12,7 @@ export type GeneratedRecordImage = {
 export async function generateRecordImages(
   records: StoredWorkRecord[],
   onProgress: (current: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<GeneratedRecordImage[]> {
   const sortedRecords = [...records].sort((a, b) => a.date.localeCompare(b.date));
   if (sortedRecords.length === 0) throw new Error("No records selected");
@@ -22,32 +24,19 @@ export async function generateRecordImages(
   for (let index = 0; index < sortedRecords.length; index += 1) {
     const record = sortedRecords[index];
     onProgress(index + 1, sortedRecords.length);
-    const rendered = await renderFittedRecordPage(record);
+    const rendered = await renderFittedRecordPage(record, signal);
     try {
-      const canvas = await withExportTimeout(html2canvas(rendered.page, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-        logging: false,
-        width: rendered.page.clientWidth,
-        height: rendered.page.clientHeight,
-        windowWidth: rendered.page.clientWidth,
-        windowHeight: rendered.page.clientHeight,
-      }), 30_000, "Image generation timed out");
-      const blob = await canvasToBlob(canvas);
-      images.push({ date: record.date, blob });
-      canvas.width = 1;
-      canvas.height = 1;
+      const canvas = await captureExportPage(rendered.page, html2canvas, signal);
+      try {
+        const blob = await canvasToPngBlob(canvas, signal);
+        images.push({ date: record.date, blob });
+      } finally {
+        releaseCanvas(canvas);
+      }
     } finally {
       rendered.cleanup();
     }
   }
 
   return images;
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement) {
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("PNG generation failed")), "image/png");
-  });
 }

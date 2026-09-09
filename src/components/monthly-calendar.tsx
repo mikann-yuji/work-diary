@@ -18,6 +18,7 @@ import { LoadingSpinner } from "@/components/loading-spinner";
 import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
 import { MedicalRecordExportDialog, type MedicalExportMode } from "@/components/medical-record-export-dialog";
 import { PdfSaveDialog, type PdfOutput } from "@/components/pdf-save-dialog";
+import { ExportCancelledError, exportErrorMessage } from "@/lib/export/browser-export-runtime";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type MedicalEvent = { type: "visit" | "deadline" | "appointment"; record: StoredMedicalRecord };
@@ -60,6 +61,7 @@ export function MonthlyCalendar({
   onToast: (message: string, type: "success" | "error") => void;
 }) {
   const generatingRef = useRef(false);
+  const exportAbortRef = useRef<AbortController | null>(null);
   const [visibleMonth, setVisibleMonth] = useState<CalendarMonth>(getCurrentMonth);
   const [selectedDate, setSelectedDate] = useState<string | null>(getLocalDateString);
   const [exportMode, setExportMode] = useState(false);
@@ -103,6 +105,7 @@ export function MonthlyCalendar({
     setExportMode(false);
   }, []);
   useEffect(() => () => {
+    exportAbortRef.current?.abort();
     previewImages?.forEach((image) => URL.revokeObjectURL(image.url));
   }, [previewImages]);
 
@@ -135,7 +138,10 @@ export function MonthlyCalendar({
   }
 
   function cancelExportMode() {
-    if (generating) return;
+    if (generating) {
+      exportAbortRef.current?.abort();
+      return;
+    }
     setExportDates(new Set());
     setExportMode(false);
   }
@@ -151,13 +157,15 @@ export function MonthlyCalendar({
     }
 
     generatingRef.current = true;
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
     setGenerating("pdf");
     setExportProgress({ current: 0, total: selectedRecords.length });
     onToast("PDFを作成しています", "success");
 
     try {
       const { generateRecordsPdf } = await import("@/lib/pdf/generate-records-pdf");
-      const output = await generateRecordsPdf(selectedRecords, (current, total) => setExportProgress({ current, total }));
+      const output = await generateRecordsPdf(selectedRecords, (current, total) => setExportProgress({ current, total }), controller.signal);
       setPdfOutput(output);
       setExportDates(new Set());
       setExportMode(false);
@@ -166,10 +174,11 @@ export function MonthlyCalendar({
       if (isRecordOverflowError(error)) {
         const [, month, day] = error.date.split("-").map(Number);
         onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
-      } else {
-        onToast("PDFを作成できませんでした。もう一度お試しください", "error");
+      } else if (!(error instanceof ExportCancelledError)) {
+        onToast(exportErrorMessage(error, "PDF"), "error");
       }
     } finally {
+      if (exportAbortRef.current === controller) exportAbortRef.current = null;
       generatingRef.current = false;
       setGenerating(null);
     }
@@ -186,12 +195,14 @@ export function MonthlyCalendar({
     }
 
     generatingRef.current = true;
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
     setGenerating("image");
     setExportProgress({ current: 0, total: selectedRecords.length });
 
     try {
       const { generateRecordImages } = await import("@/lib/image/generate-record-images");
-      const images = await generateRecordImages(selectedRecords, (current, total) => setExportProgress({ current, total }));
+      const images = await generateRecordImages(selectedRecords, (current, total) => setExportProgress({ current, total }), controller.signal);
       setPreviewImages(images.map(({ date, blob }) => ({
         date,
         blob,
@@ -203,10 +214,11 @@ export function MonthlyCalendar({
       if (isRecordOverflowError(error)) {
         const [, month, day] = error.date.split("-").map(Number);
         onToast(`${month}月${day}日の記録は内容が多いため、A4一枚に収まりません。入力内容を短くしてから、もう一度お試しください`, "error");
-      } else {
-        onToast("画像を作成できませんでした。もう一度お試しください", "error");
+      } else if (!(error instanceof ExportCancelledError)) {
+        onToast(exportErrorMessage(error, "PNG画像"), "error");
       }
     } finally {
+      if (exportAbortRef.current === controller) exportAbortRef.current = null;
       generatingRef.current = false;
       setGenerating(null);
     }
@@ -358,7 +370,7 @@ function PdfExportControls({ selectedCount, generating, progress, onSelectAll, o
         <button type="button" onClick={onClear} disabled={Boolean(generating) || selectedCount === 0} className="min-h-11 rounded-xl border border-teal-200 bg-white px-2 text-xs font-bold text-teal-800 disabled:opacity-50">選択を解除</button>
         <button type="button" onClick={onGeneratePdf} disabled={Boolean(generating) || selectedCount === 0} className="min-h-12 rounded-xl bg-teal-700 px-2 text-sm font-bold text-white disabled:opacity-50">PDFとして保存</button>
         <button type="button" onClick={onGenerateImages} disabled={Boolean(generating) || selectedCount === 0} className="min-h-12 rounded-xl bg-cyan-700 px-2 text-sm font-bold text-white disabled:opacity-50">画像として保存</button>
-        <button type="button" onClick={onCancel} disabled={Boolean(generating)} className="col-span-2 min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-sm font-bold text-slate-600 disabled:opacity-50">キャンセル</button>
+        <button type="button" onClick={onCancel} className="col-span-2 min-h-11 rounded-xl border border-slate-200 bg-white px-2 text-sm font-bold text-slate-600">{generating ? "生成を中止" : "キャンセル"}</button>
       </div>
     </div>
   );

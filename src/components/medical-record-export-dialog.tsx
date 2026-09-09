@@ -7,6 +7,7 @@ import { MedicalAttachmentLoadError, prepareMedicalRecords } from "@/lib/export/
 import { generateMedicalRecordImages, type MedicalRecordImage } from "@/lib/image/generate-medical-record-images";
 import type { StoredMedicalRecord } from "@/types/medical-record";
 import { PdfSaveDialog, type PdfOutput } from "@/components/pdf-save-dialog";
+import { ExportCancelledError, exportErrorMessage } from "@/lib/export/browser-export-runtime";
 
 type PreviewImage = MedicalRecordImage & { url: string; file: File };
 type Progress = { label: string; current?: number; total?: number };
@@ -28,20 +29,23 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const cleanupAttachmentsRef = useRef<(() => void) | null>(null);
   const imagesRef = useRef<PreviewImage[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
   useEffect(() => { imagesRef.current = images; }, [images]);
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
     void (async () => {
       try {
         const bundle = await prepareMedicalRecords(uid, records, (current, total) => {
           if (!cancelled) setProgress({ label: "画像を読み込んでいます", current, total });
-        });
+        }, controller.signal);
         if (cancelled) { bundle.cleanup(); return; }
         cleanupAttachmentsRef.current = bundle.cleanup;
         const generated = await generateMedicalRecordImages(bundle.prepared, (current, total) => {
           if (!cancelled) setProgress({ label: "プレビューを作成しています", current, total });
-        });
+        }, controller.signal);
         if (cancelled) return;
         if (mode === "pdf") {
           setProgress({ label: "PDFを作成しています", current: 0, total: generated.length });
@@ -61,9 +65,9 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
           file: new File([image.blob], image.fileName, { type: "image/png" }),
         })));
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && !(error instanceof ExportCancelledError)) {
           setLoadFailed(true);
-          onToast(error instanceof MedicalAttachmentLoadError ? "添付画像を読み込めませんでした" : "通院記録を出力できませんでした", "error");
+          onToast(error instanceof MedicalAttachmentLoadError ? "添付画像を読み込めませんでした" : exportErrorMessage(error, mode === "pdf" ? "PDF" : "PNG画像"), "error");
         }
       } finally {
         if (!cancelled) setBusy(false);
@@ -71,6 +75,7 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
     })();
     return () => {
       cancelled = true;
+      controller.abort();
       cleanupAttachmentsRef.current?.();
       imagesRef.current.forEach((image) => URL.revokeObjectURL(image.url));
     };
@@ -78,11 +83,16 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function closeDialog() {
+    abortRef.current?.abort();
+    onClose();
+  }
+
   useEffect(() => {
     document.body.style.overflow = "hidden";
     closeButtonRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") closeDialog();
       if (event.key !== "Tab") return;
       const dialog = document.querySelector<HTMLElement>("[data-medical-export-dialog]");
       const focusable = dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])');
@@ -94,6 +104,8 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
     };
     document.addEventListener("keydown", onKeyDown);
     return () => { document.body.style.overflow = ""; document.removeEventListener("keydown", onKeyDown); };
+  // closeDialog only reads refs and the stable parent callback.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose]);
 
   const hasCompactPage = useMemo(() => images.some((image) => image.compact), [images]);
@@ -145,11 +157,11 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/65 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/65 p-3 sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
       <section data-medical-export-dialog role="dialog" aria-modal="true" aria-labelledby="medical-export-title" className="mx-auto max-w-4xl rounded-3xl bg-slate-50 shadow-2xl">
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-t-3xl border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur print:hidden">
           <div className="min-w-0"><h2 id="medical-export-title" className="font-bold text-slate-900">通院記録の出力プレビュー</h2><p className="text-xs text-slate-500">{records.length}件・{records.length}ページ</p></div>
-          <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="出力プレビューを閉じる" className="h-11 w-11 rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700">×</button>
+          <button ref={closeButtonRef} type="button" onClick={closeDialog} aria-label="出力プレビューを閉じる" className="h-11 w-11 rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700">×</button>
         </header>
 
         <div className="p-4 sm:p-6 print:p-0">
@@ -158,7 +170,7 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
           {!busy && images.length ? <>
             {hasCompactPage ? <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">入力内容が多いため、文字や画像が小さくなります。出力時に確認できます。</p> : null}
             <div className="medical-export-controls mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3 print:hidden">
-              <button type="button" onClick={onClose} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 font-bold text-slate-700">戻る</button>
+              <button type="button" onClick={closeDialog} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 font-bold text-slate-700">戻る</button>
               <button type="button" onClick={() => void savePdf()} className="min-h-11 rounded-xl bg-teal-700 px-3 font-bold text-white">PDFとして保存</button>
               <button type="button" onClick={() => setImageMode(true)} className="min-h-11 rounded-xl bg-cyan-700 px-3 font-bold text-white">画像として保存</button>
             </div>

@@ -3,6 +3,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import { DailyRecordPdfPage, PDF_DENSITY_LEVELS } from "@/components/daily-record-pdf-page";
 import type { StoredWorkRecord } from "@/lib/firestore/records";
+import { createOffscreenExportHost, waitForAnimationFrames, waitForExportElement } from "@/lib/export/browser-export-runtime";
 
 export class RecordPageOverflowError extends Error {
   constructor(public readonly date: string) {
@@ -11,27 +12,16 @@ export class RecordPageOverflowError extends Error {
   }
 }
 
-export async function renderFittedRecordPage(record: StoredWorkRecord) {
-  const host = document.createElement("div");
-  Object.assign(host.style, {
-    position: "fixed",
-    left: "-10000px",
-    top: "0",
-    width: "210mm",
-    height: "297mm",
-    pointerEvents: "none",
-    zIndex: "-1",
-  });
-  document.body.appendChild(host);
+export async function renderFittedRecordPage(record: StoredWorkRecord, signal?: AbortSignal) {
+  const host = createOffscreenExportHost();
   const root = createRoot(host);
 
   try {
     for (let density = 0; density < PDF_DENSITY_LEVELS; density += 1) {
       root.render(<DailyRecordPdfPage record={record} density={density} />);
-      await afterRender();
-      const page = host.querySelector<HTMLElement>("[data-pdf-page]");
-      const content = host.querySelector<HTMLElement>("[data-pdf-content]");
-      if (!page || !content) throw new Error("Record page was not rendered");
+      const page = await waitForExportElement<HTMLElement>(host, "[data-pdf-page]", signal);
+      const content = await waitForExportElement<HTMLElement>(host, "[data-pdf-content]", signal);
+      await waitForAnimationFrames(2, signal);
       const fits = content.scrollHeight <= content.clientHeight + 1
         && content.getBoundingClientRect().bottom <= page.getBoundingClientRect().bottom + 1;
       if (fits) return { page, cleanup: () => cleanupHost(root, host) };
@@ -46,19 +36,4 @@ export async function renderFittedRecordPage(record: StoredWorkRecord) {
 function cleanupHost(root: Root, host: HTMLDivElement) {
   root.unmount();
   host.remove();
-}
-
-function afterRender() {
-  return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-}
-
-export function withExportTimeout<T>(promise: Promise<T>, milliseconds: number, message: string) {
-  return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(message)), milliseconds);
-    promise.then((value) => { window.clearTimeout(timer); resolve(value); }, (error) => { window.clearTimeout(timer); reject(error); });
-  });
-}
-
-export async function waitForExportFonts() {
-  await withExportTimeout(document.fonts.ready, 5_000, "Font loading timed out").catch(() => undefined);
 }
