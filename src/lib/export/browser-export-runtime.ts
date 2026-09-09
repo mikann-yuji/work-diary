@@ -56,11 +56,11 @@ export function withExportTimeout<T>(
   });
 }
 
-export async function waitForExportFonts(signal?: AbortSignal) {
+export async function waitForExportFonts(ownerDocument: Document = document, signal?: AbortSignal) {
   throwIfAborted(signal);
-  if (!document.fonts) return;
+  if (!ownerDocument.fonts) return;
   try {
-    await withExportTimeout(document.fonts.ready, 5_000, "wait-fonts", signal);
+    await withExportTimeout(ownerDocument.fonts.ready, 5_000, "wait-fonts", signal);
   } catch (error) {
     // iPhone Safari/PWA can leave document.fonts.ready pending even when the
     // system Japanese font is already drawable. Font readiness is therefore
@@ -176,21 +176,44 @@ export function releaseCanvas(canvas: HTMLCanvasElement) {
   canvas.height = 1;
 }
 
+const exportFrameByHost = new WeakMap<HTMLElement, HTMLIFrameElement>();
+
 export function createOffscreenExportHost() {
-  const host = document.createElement("div");
-  Object.assign(host.style, {
+  const frame = document.createElement("iframe");
+  frame.title = "出力用画面";
+  frame.setAttribute("aria-hidden", "true");
+  Object.assign(frame.style, {
     position: "fixed",
     left: "-10000px",
     top: "0",
     width: "210mm",
     height: "297mm",
+    border: "0",
     pointerEvents: "none",
     visibility: "visible",
     zIndex: "-1",
   });
+  document.body.appendChild(frame);
+  const frameDocument = frame.contentDocument;
+  if (!frameDocument) {
+    frame.remove();
+    throw new ExportRuntimeError("prepare-dom", "Export frame is unavailable");
+  }
+  frameDocument.documentElement.style.cssText = "margin:0;width:210mm;height:297mm;background:#fff";
+  frameDocument.body.style.cssText = "margin:0;width:210mm;height:297mm;background:#fff";
+  const host = frameDocument.createElement("div");
+  host.style.cssText = "width:210mm;height:297mm;background:#fff";
   host.setAttribute("aria-hidden", "true");
-  document.body.appendChild(host);
+  frameDocument.body.appendChild(host);
+  exportFrameByHost.set(host, frame);
   return host;
+}
+
+export function removeOffscreenExportHost(host: HTMLElement) {
+  const frame = exportFrameByHost.get(host);
+  exportFrameByHost.delete(host);
+  host.remove();
+  frame?.remove();
 }
 
 export function exportErrorMessage(error: unknown, format: "PDF" | "PNG画像") {

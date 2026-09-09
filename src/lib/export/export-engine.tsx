@@ -8,6 +8,7 @@ import {
   canvasToPngBlob,
   captureExportPage,
   createOffscreenExportHost,
+  removeOffscreenExportHost,
   releaseCanvas,
   throwIfAborted,
   waitForAnimationFrames,
@@ -60,9 +61,11 @@ export async function generateExport<T, A extends LoadedAssets>({ pages, adapter
     trace(adapter.recordType, format, pages.length, next.stage, startedAt);
   };
   const timeoutMs = 30_000 + Math.max(0, sorted.length - 1) * 20_000;
-  const timer = window.setTimeout(() => controller.abort("overall-timeout"), timeoutMs);
   let timedOut = false;
-  controller.signal.addEventListener("abort", () => { timedOut = controller.signal.reason === "overall-timeout"; }, { once: true });
+  const timer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   try {
     report({ stage: "validate" });
@@ -94,7 +97,7 @@ export async function generateExport<T, A extends LoadedAssets>({ pages, adapter
           renderedPage = await waitForExportElement(host, adapter.pageSelector, controller.signal);
           const content = await waitForExportElement(host, adapter.contentSelector, controller.signal);
           report({ stage: "wait-fonts", current: index + 1, total: sorted.length });
-          await waitForExportFonts(controller.signal);
+          await waitForExportFonts(renderedPage.ownerDocument, controller.signal);
           report({ stage: "wait-images", current: index + 1, total: sorted.length });
           await waitForExportImages(host, controller.signal);
           await waitForAnimationFrames(2, controller.signal);
@@ -119,7 +122,7 @@ export async function generateExport<T, A extends LoadedAssets>({ pages, adapter
         report({ stage: "cleanup", current: index + 1, total: sorted.length });
         if (canvas) releaseCanvas(canvas);
         root.unmount();
-        host.remove();
+        removeOffscreenExportHost(host);
         assets.cleanup();
       }
     }

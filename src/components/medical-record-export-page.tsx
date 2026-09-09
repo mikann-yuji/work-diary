@@ -56,7 +56,7 @@ export function MedicalRecordExportPage({ prepared, density = 0 }: { prepared: P
       </div></ExportSection>
 
       {attachments.length ? <ExportSection title="添付画像"><div style={{ display: "grid", gridTemplateColumns: attachments.length === 1 ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: "2mm" }}>
-        {attachments.map((attachment) => <figure key={attachment.id} style={{ margin: 0, minWidth: 0, border: "1px solid #b8c8c6", padding: style.padding }}><figcaption style={{ marginBottom: "1mm", color: "#134e4a", fontWeight: 700 }}>{attachment.label}</figcaption>{/* Blob URL is created from an authenticated Firebase Storage download. */}<img src={attachment.url} alt={attachment.label} style={{ display: "block", width: "100%", height: style.imageHeight, objectFit: "contain", background: "#fff" }} /></figure>)}
+        {attachments.map((attachment) => <figure key={attachment.id} style={{ margin: 0, minWidth: 0, border: "1px solid #b8c8c6", padding: style.padding }}><figcaption style={{ marginBottom: "1mm", color: "#134e4a", fontWeight: 700 }}>{attachment.label}</figcaption>{/* Blob URL is created from an authenticated Firebase Storage download. */}<img src={attachment.url} alt={attachment.label} loading="eager" decoding="sync" style={{ display: "block", width: "100%", height: style.imageHeight, objectFit: "contain", background: "#fff" }} /></figure>)}
       </div></ExportSection> : null}
 
       <footer style={{ marginTop: "auto", borderTop: "1px solid #b8c8c6", paddingTop: "1mm", textAlign: "right", color: "#536361", fontSize: "6.5pt" }}>仕事上の傾向と対策</footer>
