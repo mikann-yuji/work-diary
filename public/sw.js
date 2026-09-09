@@ -1,4 +1,4 @@
-const CACHE_NAME = "work-diary-v2";
+const CACHE_NAME = "work-diary-v3";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/app-icon.svg", "/app-icon-maskable.svg"];
 
 self.addEventListener("install", (event) => {

@@ -52,7 +52,14 @@ export function withExportTimeout<T>(
 export async function waitForExportFonts(signal?: AbortSignal) {
   throwIfAborted(signal);
   if (!document.fonts) return;
-  await withExportTimeout(document.fonts.ready, 5_000, "wait-fonts", signal);
+  try {
+    await withExportTimeout(document.fonts.ready, 5_000, "wait-fonts", signal);
+  } catch (error) {
+    // iPhone Safari/PWA can leave document.fonts.ready pending even when the
+    // system Japanese font is already drawable. Font readiness is therefore
+    // best-effort; cancellation must still stop the export immediately.
+    if (error instanceof ExportCancelledError) throw error;
+  }
 }
 
 export async function waitForAnimationFrames(count = 2, signal?: AbortSignal) {
