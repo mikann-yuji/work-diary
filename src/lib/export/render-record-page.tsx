@@ -15,7 +15,7 @@ export async function renderFittedRecordPage(record: StoredWorkRecord) {
   const host = document.createElement("div");
   Object.assign(host.style, {
     position: "fixed",
-    left: "0",
+    left: "-10000px",
     top: "0",
     width: "210mm",
     height: "297mm",

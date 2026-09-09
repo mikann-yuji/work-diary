@@ -19,8 +19,7 @@ export async function generateMedicalRecordsPdf(
   const fileName = images.length === 1
     ? `medical-record_${first.date}_${first.recordId.slice(0, 8)}.pdf`
     : `medical-records_${first.date}_${last.date}.pdf`;
-  const blob = pdf.output("blob");
-  downloadBlob(blob, fileName);
+  return { blob: pdf.output("blob"), fileName };
 }
 
 function blobToDataUrl(blob: Blob) {
@@ -30,17 +29,4 @@ function blobToDataUrl(blob: Blob) {
     reader.onerror = () => reject(reader.error ?? new Error("PDF image read failed"));
     reader.readAsDataURL(blob);
   });
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  window.setTimeout(() => {
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  }, 1000);
 }

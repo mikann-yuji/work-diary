@@ -46,30 +46,10 @@ export async function generateRecordsPdf(
     }
   }
 
-  const blob = pdf.output("blob");
-  savePdfBlob(blob, createFileName(sortedRecords));
+  return { blob: pdf.output("blob"), fileName: createFileName(sortedRecords) };
 }
 
 function createFileName(records: StoredWorkRecord[]) {
   if (records.length === 1) return `work-diary_${records[0].date}.pdf`;
   return `work-diary_${records[0].date.slice(0, 7)}_${records.length}days.pdf`;
-}
-
-function savePdfBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = "noopener";
-
-  if ("download" in anchor) {
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-    return;
-  }
-
-  const opened = window.open(url, "_blank", "noopener,noreferrer");
-  window.setTimeout(() => URL.revokeObjectURL(url), opened ? 60_000 : 1500);
 }

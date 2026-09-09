@@ -50,7 +50,7 @@ export async function prepareMedicalRecords(uid: string, records: StoredMedicalR
 
 export async function renderFittedMedicalRecordPage(prepared: PreparedMedicalRecord) {
   const host = document.createElement("div");
-  Object.assign(host.style, { position: "fixed", left: "0", top: "0", width: "210mm", height: "297mm", pointerEvents: "none", zIndex: "-1" });
+  Object.assign(host.style, { position: "fixed", left: "-10000px", top: "0", width: "210mm", height: "297mm", pointerEvents: "none", zIndex: "-1" });
   document.body.appendChild(host);
   const root = createRoot(host);
   try {

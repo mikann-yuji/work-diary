@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { MedicalAttachmentLoadError, prepareMedicalRecords } from "@/lib/export/medical-record-export";
 import { generateMedicalRecordImages, type MedicalRecordImage } from "@/lib/image/generate-medical-record-images";
 import type { StoredMedicalRecord } from "@/types/medical-record";
+import { PdfSaveDialog, type PdfOutput } from "@/components/pdf-save-dialog";
 
 type PreviewImage = MedicalRecordImage & { url: string; file: File };
 type Progress = { label: string; current?: number; total?: number };
@@ -23,6 +24,7 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
   const [busy, setBusy] = useState(true);
   const [imageMode, setImageMode] = useState(mode === "image");
   const [loadFailed, setLoadFailed] = useState(false);
+  const [pdfOutput, setPdfOutput] = useState<PdfOutput | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const cleanupAttachmentsRef = useRef<(() => void) | null>(null);
   const imagesRef = useRef<PreviewImage[]>([]);
@@ -44,12 +46,12 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
         if (mode === "pdf") {
           setProgress({ label: "PDFを作成しています", current: 0, total: generated.length });
           const { generateMedicalRecordsPdf } = await import("@/lib/pdf/generate-medical-records-pdf");
-          await generateMedicalRecordsPdf(generated, (current, total) => {
+          const output = await generateMedicalRecordsPdf(generated, (current, total) => {
             if (!cancelled) setProgress({ label: "PDFを作成しています", current, total });
           });
           if (!cancelled) {
-            onToast("PDFを保存しました", "success");
-            onClose();
+            setPdfOutput(output);
+            onToast("PDFを作成しました", "success");
           }
           return;
         }
@@ -106,8 +108,9 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
     setProgress({ label: "PDFを作成しています", current: 0, total: images.length });
     try {
       const { generateMedicalRecordsPdf } = await import("@/lib/pdf/generate-medical-records-pdf");
-      await generateMedicalRecordsPdf(images, (current, total) => setProgress({ label: "PDFを作成しています", current, total }));
-      onToast("PDFを保存しました", "success");
+      const output = await generateMedicalRecordsPdf(images, (current, total) => setProgress({ label: "PDFを作成しています", current, total }));
+      setPdfOutput(output);
+      onToast("PDFを作成しました", "success");
     } catch {
       onToast("通院記録を出力できませんでした", "error");
     } finally { setBusy(false); }
@@ -169,6 +172,7 @@ export function MedicalRecordExportDialog({ uid, records, mode = "preview", onCl
           </> : null}
         </div>
       </section>
+      {pdfOutput ? <PdfSaveDialog output={pdfOutput} title="通院記録" onClose={() => { setPdfOutput(null); onClose(); }} onToast={onToast} /> : null}
     </div>,
     document.body,
   );

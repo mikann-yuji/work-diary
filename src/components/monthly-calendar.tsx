@@ -17,6 +17,7 @@ import type { StoredMedicalRecord } from "@/types/medical-record";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { ImagePreviewDialog, type PreviewRecordImage } from "@/components/image-preview-dialog";
 import { MedicalRecordExportDialog, type MedicalExportMode } from "@/components/medical-record-export-dialog";
+import { PdfSaveDialog, type PdfOutput } from "@/components/pdf-save-dialog";
 
 type RecordsState = "loading" | "empty" | "success" | "error";
 type MedicalEvent = { type: "visit" | "deadline" | "appointment"; record: StoredMedicalRecord };
@@ -66,6 +67,7 @@ export function MonthlyCalendar({
   const [generating, setGenerating] = useState<"pdf" | "image" | null>(null);
   const [exportProgress, setExportProgress] = useState({ current: 0, total: 0 });
   const [previewImages, setPreviewImages] = useState<PreviewRecordImage[] | null>(null);
+  const [pdfOutput, setPdfOutput] = useState<PdfOutput | null>(null);
   const [selectedMedicalExportIds, setSelectedMedicalExportIds] = useState<Set<string>>(() => new Set());
   const [medicalExportRequest, setMedicalExportRequest] = useState<{ records: StoredMedicalRecord[]; mode: MedicalExportMode } | null>(null);
   const today = useMemo(() => getLocalDateString(), []);
@@ -155,10 +157,11 @@ export function MonthlyCalendar({
 
     try {
       const { generateRecordsPdf } = await import("@/lib/pdf/generate-records-pdf");
-      await generateRecordsPdf(selectedRecords, (current, total) => setExportProgress({ current, total }));
+      const output = await generateRecordsPdf(selectedRecords, (current, total) => setExportProgress({ current, total }));
+      setPdfOutput(output);
       setExportDates(new Set());
       setExportMode(false);
-      onToast("PDFを保存しました", "success");
+      onToast("PDFを作成しました", "success");
     } catch (error) {
       if (isRecordOverflowError(error)) {
         const [, month, day] = error.date.split("-").map(Number);
@@ -288,6 +291,7 @@ export function MonthlyCalendar({
         </div>
       )}
       {previewImages ? <ImagePreviewDialog images={previewImages} onClose={closeImagePreview} onToast={onToast} /> : null}
+      {pdfOutput ? <PdfSaveDialog output={pdfOutput} title="仕事上の傾向と対策" onClose={() => setPdfOutput(null)} onToast={onToast} /> : null}
       {medicalExportRequest ? <MedicalRecordExportDialog uid={uid} records={medicalExportRequest.records} mode={medicalExportRequest.mode} onClose={() => setMedicalExportRequest(null)} onToast={onToast} /> : null}
     </div>
   );
