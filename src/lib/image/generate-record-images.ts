@@ -1,7 +1,7 @@
 "use client";
 
 import type { StoredWorkRecord } from "@/lib/firestore/records";
-import { renderFittedRecordPage } from "@/lib/export/render-record-page";
+import { renderFittedRecordPage, waitForExportFonts, withExportTimeout } from "@/lib/export/render-record-page";
 
 export type GeneratedRecordImage = {
   date: string;
@@ -16,7 +16,7 @@ export async function generateRecordImages(
   if (sortedRecords.length === 0) throw new Error("No records selected");
 
   const html2canvas = (await import("html2canvas")).default;
-  await document.fonts.ready;
+  await waitForExportFonts();
   const images: GeneratedRecordImage[] = [];
 
   for (let index = 0; index < sortedRecords.length; index += 1) {
@@ -24,7 +24,7 @@ export async function generateRecordImages(
     onProgress(index + 1, sortedRecords.length);
     const rendered = await renderFittedRecordPage(record);
     try {
-      const canvas = await html2canvas(rendered.page, {
+      const canvas = await withExportTimeout(html2canvas(rendered.page, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
@@ -33,7 +33,7 @@ export async function generateRecordImages(
         height: rendered.page.clientHeight,
         windowWidth: rendered.page.clientWidth,
         windowHeight: rendered.page.clientHeight,
-      });
+      }), 30_000, "Image generation timed out");
       const blob = await canvasToBlob(canvas);
       images.push({ date: record.date, blob });
       canvas.width = 1;

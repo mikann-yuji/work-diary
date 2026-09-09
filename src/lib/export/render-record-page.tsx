@@ -15,7 +15,7 @@ export async function renderFittedRecordPage(record: StoredWorkRecord) {
   const host = document.createElement("div");
   Object.assign(host.style, {
     position: "fixed",
-    left: "-10000px",
+    left: "0",
     top: "0",
     width: "210mm",
     height: "297mm",
@@ -50,4 +50,15 @@ function cleanupHost(root: Root, host: HTMLDivElement) {
 
 function afterRender() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+}
+
+export function withExportTimeout<T>(promise: Promise<T>, milliseconds: number, message: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), milliseconds);
+    promise.then((value) => { window.clearTimeout(timer); resolve(value); }, (error) => { window.clearTimeout(timer); reject(error); });
+  });
+}
+
+export async function waitForExportFonts() {
+  await withExportTimeout(document.fonts.ready, 5_000, "Font loading timed out").catch(() => undefined);
 }

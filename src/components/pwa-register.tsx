@@ -7,7 +7,7 @@ export function PwaRegister() {
     if (!("serviceWorker" in navigator)) return;
 
     const register = () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then((registration) => registration.update()).catch(() => {
         // The app remains usable online if registration is unavailable.
       });
     };

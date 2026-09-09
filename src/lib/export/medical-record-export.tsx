@@ -50,7 +50,7 @@ export async function prepareMedicalRecords(uid: string, records: StoredMedicalR
 
 export async function renderFittedMedicalRecordPage(prepared: PreparedMedicalRecord) {
   const host = document.createElement("div");
-  Object.assign(host.style, { position: "fixed", left: "-10000px", top: "0", width: "210mm", height: "297mm", pointerEvents: "none", zIndex: "-1" });
+  Object.assign(host.style, { position: "fixed", left: "0", top: "0", width: "210mm", height: "297mm", pointerEvents: "none", zIndex: "-1" });
   document.body.appendChild(host);
   const root = createRoot(host);
   try {
@@ -75,7 +75,7 @@ export async function renderFittedMedicalRecordPage(prepared: PreparedMedicalRec
 
 export async function captureMedicalRecordPage(prepared: PreparedMedicalRecord) {
   const html2canvas = (await import("html2canvas")).default;
-  await document.fonts.ready;
+  await withTimeout(document.fonts.ready, 5_000, "Font loading timed out").catch(() => undefined);
   const rendered = await renderFittedMedicalRecordPage(prepared);
   try {
     const canvas = await html2canvas(rendered.page, { scale: 2, backgroundColor: "#ffffff", useCORS: false, logging: false, width: rendered.page.clientWidth, height: rendered.page.clientHeight, windowWidth: rendered.page.clientWidth, windowHeight: rendered.page.clientHeight });

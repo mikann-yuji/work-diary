@@ -1,4 +1,4 @@
-const CACHE_NAME = "work-diary-v1";
+const CACHE_NAME = "work-diary-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/app-icon.svg", "/app-icon-maskable.svg"];
 
 self.addEventListener("install", (event) => {
@@ -27,6 +27,20 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(() => caches.match("/")),
+    );
+    return;
+  }
+
+  // Next.jsのビルドごとに変わるJS/CSSはネットワークを優先し、
+  // 古いデプロイのチャンクと新しいHTMLが混在しないようにする。
+  if (new URL(event.request.url).pathname.startsWith("/_next/")) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+          return response;
+        })
+        .catch(() => caches.match(event.request)),
     );
     return;
   }

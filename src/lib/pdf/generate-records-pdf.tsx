@@ -1,7 +1,7 @@
 "use client";
 
 import type { StoredWorkRecord } from "@/lib/firestore/records";
-import { RecordPageOverflowError, renderFittedRecordPage } from "@/lib/export/render-record-page";
+import { RecordPageOverflowError, renderFittedRecordPage, waitForExportFonts, withExportTimeout } from "@/lib/export/render-record-page";
 
 export { RecordPageOverflowError as PdfPageOverflowError };
 
@@ -17,7 +17,7 @@ export async function generateRecordsPdf(
     import("html2canvas"),
   ]);
   const html2canvas = html2canvasModule.default;
-  await document.fonts.ready;
+  await waitForExportFonts();
 
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
 
@@ -27,7 +27,7 @@ export async function generateRecordsPdf(
     const rendered = await renderFittedRecordPage(record);
 
     try {
-      const canvas = await html2canvas(rendered.page, {
+      const canvas = await withExportTimeout(html2canvas(rendered.page, {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
@@ -36,7 +36,7 @@ export async function generateRecordsPdf(
         height: rendered.page.clientHeight,
         windowWidth: rendered.page.clientWidth,
         windowHeight: rendered.page.clientHeight,
-      });
+      }), 30_000, "PDF page generation timed out");
       if (index > 0) pdf.addPage("a4", "portrait");
       pdf.addImage(canvas, "PNG", 0, 0, 210, 297, undefined, "FAST");
       canvas.width = 1;
